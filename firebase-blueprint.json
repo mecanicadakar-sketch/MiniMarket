@@ -9,7 +9,8 @@
         "username": { "type": "string", "minLength": 2, "maxLength": 80 },
         "email": { "type": "string", "minLength": 3, "maxLength": 160 },
         "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
-        "role": { "type": "string", "enum": ["super_admin", "manager", "cashier"] },
+        "role": { "type": "string", "enum": ["super_admin", "manager", "cashier", "warehouse"] },
+        "jobTitle": { "type": "string", "maxLength": 60 },
         "active": { "type": "boolean" },
         "permissions": { "type": "object" },
         "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -54,7 +55,7 @@
         "barcode": { "type": "string", "minLength": 1, "maxLength": 64 },
         "sku": { "type": "string", "minLength": 1, "maxLength": 40 },
         "name": { "type": "string", "minLength": 1, "maxLength": 160 },
-        "category": { "type": "string", "enum": ["Almacén", "Lácteos", "Bebidas", "Verdulería", "Panadería", "Fiambrería", "Limpieza"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 40 },
         "unit": { "type": "string", "enum": ["u", "kg"] },
         "costPrice": { "type": "number" },
         "salePrice": { "type": "number" },
@@ -267,7 +268,7 @@
   "firestore": {
     "/staff/{staffId}": {
       "schema": { "$ref": "#/entities/StaffProfile" },
-      "description": "Cuentas del personal con rol (super_admin, manager, cashier) y permisos granulares"
+      "description": "Cuentas del personal con rol (super_admin, manager, cashier, warehouse), puesto personalizado y permisos granulares"
     },
     "/staff/{staffId}/credentials/{credId}": {
       "schema": { "$ref": "#/entities/StaffCredential" },

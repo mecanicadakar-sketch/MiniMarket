@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Barcode,
+  CheckCircle2,
   DollarSign,
   Printer,
   Scale,
+  Settings2,
   Usb,
   Volume2,
   X,
@@ -15,12 +18,16 @@ import { isWebSerialSupported, playScannerBeep } from '../utils/hardware';
 interface HardwareCenterProps {
   config: HardwareConfig;
   store: StoreSettings;
+  scannerConnected: boolean;
   printerConnected: boolean;
   scaleConnected: boolean;
   scaleWeight: number;
   scanLogs: ScanLogEntry[];
   onUpdateConfig: (next: HardwareConfig) => void;
   onOpenStoreSettings: () => void;
+  onConnectScanner: () => Promise<void>;
+  onDisconnectScanner: () => Promise<void>;
+  onVerifyHidScanner: (detectedSuffix?: 'Enter' | 'Tab', sampleCode?: string) => void;
   onConnectPrinter: () => Promise<void>;
   onDisconnectPrinter: () => Promise<void>;
   onConnectScale: () => Promise<void>;
@@ -34,12 +41,16 @@ interface HardwareCenterProps {
 export const HardwareCenter: React.FC<HardwareCenterProps> = ({
   config,
   store,
+  scannerConnected,
   printerConnected,
   scaleConnected,
   scaleWeight,
   scanLogs,
   onUpdateConfig,
   onOpenStoreSettings,
+  onConnectScanner,
+  onDisconnectScanner,
+  onVerifyHidScanner,
   onConnectPrinter,
   onDisconnectPrinter,
   onConnectScale,
@@ -50,7 +61,31 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
   onTestDrawer,
 }) => {
   const [testBarcode, setTestBarcode] = useState('7790895000430');
+  const [scannerModalOpen, setScannerModalOpen] = useState(false);
+  const [captureInput, setCaptureInput] = useState('');
+  const [capturedSample, setCapturedSample] = useState<{
+    code: string;
+    suffix: 'Enter' | 'Tab';
+  } | null>(null);
+  const captureInputRef = useRef<HTMLInputElement | null>(null);
   const serialSupported = isWebSerialSupported();
+  const scannerMode = config.scannerMode ?? 'hid_keyboard';
+  const scannerBaudRate = config.scannerBaudRate ?? 9600;
+
+  useEffect(() => {
+    if (scannerModalOpen && scannerMode === 'hid_keyboard') {
+      const timer = window.setTimeout(() => {
+        captureInputRef.current?.focus();
+      }, 60);
+      return () => window.clearTimeout(timer);
+    }
+  }, [scannerModalOpen, scannerMode]);
+
+  const handleOpenScannerModal = () => {
+    setCaptureInput('');
+    setCapturedSample(null);
+    setScannerModalOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -65,36 +100,91 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* 1. Barcode Scanner */}
         <div className="rounded-xl border border-amber-200/80 bg-white p-5">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-orange-600">
                 <Barcode className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="font-display text-sm font-semibold text-slate-900">
-                  Lector de Código de Barras (USB HID)
+                  Lector de Código de Barras (USB HID / Serial)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  {config.scannerEnabled
-                    ? 'Escucha global activa · Modo teclado'
-                    : 'Detección global pausada'}
+                  {scannerConnected
+                    ? scannerMode === 'serial_com'
+                      ? 'Puerto serie conectado (lectura continua activa)'
+                      : 'Lector USB HID conectado y calibrado'
+                    : config.scannerEnabled
+                      ? scannerMode === 'serial_com'
+                        ? 'Modo USB-Serial / RS-232 · Listo para conectar puerto'
+                        : 'Escucha global activa · Modo teclado USB HID'
+                      : 'Detección global pausada'}
                 </p>
               </div>
             </div>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={config.scannerEnabled}
-                onChange={(e) =>
-                  onUpdateConfig({ ...config, scannerEnabled: e.target.checked })
-                }
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
-              />
-              Activo
-            </label>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenScannerModal}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <Settings2 className="h-4 w-4" />
+                Configurar
+              </button>
+              {scannerConnected ? (
+                <button
+                  type="button"
+                  onClick={onDisconnectScanner}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                >
+                  <X className="h-4 w-4" />
+                  Desconectar
+                </button>
+              ) : scannerMode === 'serial_com' ? (
+                <button
+                  type="button"
+                  disabled={!serialSupported}
+                  onClick={onConnectScanner}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <Usb className="h-4 w-4" />
+                  Conectar USB/Serial
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenScannerModal}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <Usb className="h-4 w-4" />
+                  Conectar Lector
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+          <div className="mt-4 grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
+            <div>
+              <label className="block font-medium text-slate-700">Modo de conexión</label>
+              <select
+                value={scannerMode}
+                onChange={(e) => {
+                  const nextMode = e.target.value as 'hid_keyboard' | 'serial_com';
+                  if (scannerConnected) {
+                    void onDisconnectScanner();
+                  }
+                  onUpdateConfig({
+                    ...config,
+                    scannerMode: nextMode,
+                  });
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+              >
+                <option value="hid_keyboard">USB HID (Teclado)</option>
+                <option value="serial_com">USB-Serial / RS-232</option>
+              </select>
+            </div>
             <div>
               <label className="block font-medium text-slate-700">Tecla de terminación</label>
               <select
@@ -105,13 +195,51 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
                     scannerSuffix: e.target.value as 'Enter' | 'Tab',
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
               >
                 <option value="Enter">Enter (CR/LF)</option>
                 <option value="Tab">Tabulador (TAB)</option>
               </select>
             </div>
-            <div>
+            {scannerMode === 'serial_com' ? (
+              <div>
+                <label className="block font-medium text-slate-700">Baudios (Serial)</label>
+                <select
+                  value={scannerBaudRate}
+                  onChange={(e) =>
+                    onUpdateConfig({
+                      ...config,
+                      scannerBaudRate: Number(e.target.value),
+                    })
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                >
+                  <option value={9600}>9600</option>
+                  <option value={19200}>19200</option>
+                  <option value={38400}>38400</option>
+                  <option value={115200}>115200</option>
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="block font-medium text-slate-700">
+                  Prefijo balanza (EAN-13)
+                </label>
+                <input
+                  type="text"
+                  maxLength={2}
+                  value={config.scannerWeighedPrefix}
+                  onChange={(e) =>
+                    onUpdateConfig({ ...config, scannerWeighedPrefix: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {scannerMode === 'serial_com' && (
+            <div className="mt-3 text-xs">
               <label className="block font-medium text-slate-700">
                 Prefijo etiqueta balanza (EAN-13)
               </label>
@@ -122,23 +250,36 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ ...config, scannerWeighedPrefix: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                className="mt-1 w-32 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
               />
             </div>
-          </div>
+          )}
 
-          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
-            <label className="inline-flex cursor-pointer items-center gap-2 text-slate-700">
-              <input
-                type="checkbox"
-                checked={config.scannerBeep}
-                onChange={(e) =>
-                  onUpdateConfig({ ...config, scannerBeep: e.target.checked })
-                }
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600"
-              />
-              Sonido de confirmación al escanear
-            </label>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="inline-flex cursor-pointer items-center gap-2 font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={config.scannerEnabled}
+                  onChange={(e) =>
+                    onUpdateConfig({ ...config, scannerEnabled: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
+                />
+                Lector activo
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={config.scannerBeep}
+                  onChange={(e) =>
+                    onUpdateConfig({ ...config, scannerBeep: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                />
+                Sonido al escanear
+              </label>
+            </div>
             <button
               type="button"
               onClick={playScannerBeep}
@@ -442,6 +583,235 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
           Editar datos e imágenes del comercio
         </button>
       </div>
+
+      {/* Scanner Connection & Calibration Modal */}
+      {scannerModalOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-amber-200 bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-orange-600">
+                    <Barcode className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display text-base font-bold text-slate-900">
+                      Conectar y Configurar Lector de Barras
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Elegí el tipo de conexión o escaneá un producto para calibrar el lector.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScannerModalOpen(false)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Cerrar configuración de lector"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Tipo de conexión del lector
+                  </label>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (scannerConnected && scannerMode === 'serial_com') {
+                          void onDisconnectScanner();
+                        }
+                        onUpdateConfig({ ...config, scannerMode: 'hid_keyboard' });
+                      }}
+                      className={`rounded-xl border p-3 text-left transition-colors ${
+                        scannerMode === 'hid_keyboard'
+                          ? 'border-orange-400 bg-amber-50/70'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">USB HID (Teclado)</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Plug & Play estándar (USB o Bluetooth)
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateConfig({ ...config, scannerMode: 'serial_com' });
+                      }}
+                      className={`rounded-xl border p-3 text-left transition-colors ${
+                        scannerMode === 'serial_com'
+                          ? 'border-orange-400 bg-amber-50/70'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">USB-Serial / RS-232</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Puerto COM virtual por Web Serial
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {scannerMode === 'hid_keyboard' ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                    <label className="block text-xs font-semibold text-emerald-950">
+                      Calibración en vivo (escaneá cualquier código ahora)
+                    </label>
+                    <p className="mt-0.5 text-[11px] text-emerald-800">
+                      Hacé clic en el recuadro y dispará el lector sobre un producto. Detectamos
+                      automáticamente si termina en Enter o Tabulador.
+                    </p>
+                    <input
+                      ref={captureInputRef}
+                      type="text"
+                      value={captureInput}
+                      onChange={(e) => setCaptureInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === 'Tab') {
+                          e.preventDefault();
+                          const code = captureInput.trim();
+                          if (code.length >= 3) {
+                            const detectedSuffix = e.key as 'Enter' | 'Tab';
+                            setCapturedSample({ code, suffix: detectedSuffix });
+                            onVerifyHidScanner(detectedSuffix, code);
+                            setCaptureInput('');
+                          }
+                        }
+                      }}
+                      placeholder="Esperando lectura del lector USB..."
+                      className="mt-2.5 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 font-mono text-sm text-slate-900 focus:border-emerald-600 focus:outline-none"
+                    />
+
+                    {capturedSample && (
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-900">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
+                        <span>
+                          Lectura capturada: <strong className="font-mono">{capturedSample.code}</strong>{' '}
+                          (fin: {capturedSample.suffix})
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Velocidad del puerto serie (Baudios)
+                      </label>
+                      <select
+                        value={scannerBaudRate}
+                        onChange={(e) =>
+                          onUpdateConfig({ ...config, scannerBaudRate: Number(e.target.value) })
+                        }
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                      >
+                        <option value={9600}>9600 bps (Estándar)</option>
+                        <option value={19200}>19200 bps</option>
+                        <option value={38400}>38400 bps</option>
+                        <option value={115200}>115200 bps</option>
+                      </select>
+                    </div>
+                    {!serialSupported && (
+                      <p className="text-[11px] text-amber-800">
+                        Web Serial requiere Chrome o Edge en escritorio.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+                  <div>
+                    <label className="block font-medium text-slate-700">Tecla de terminación</label>
+                    <select
+                      value={config.scannerSuffix}
+                      onChange={(e) =>
+                        onUpdateConfig({
+                          ...config,
+                          scannerSuffix: e.target.value as 'Enter' | 'Tab',
+                        })
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                    >
+                      <option value="Enter">Enter (CR/LF)</option>
+                      <option value="Tab">Tabulador (TAB)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700">
+                      Prefijo balanza (EAN-13)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={config.scannerWeighedPrefix}
+                      onChange={(e) =>
+                        onUpdateConfig({ ...config, scannerWeighedPrefix: e.target.value })
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center justify-end gap-2.5 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setScannerModalOpen(false)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cerrar
+                </button>
+                {scannerMode === 'serial_com' ? (
+                  scannerConnected ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await onDisconnectScanner();
+                        setScannerModalOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                    >
+                      <X className="h-4 w-4" />
+                      Desconectar Puerto
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!serialSupported}
+                      onClick={async () => {
+                        await onConnectScanner();
+                        setScannerModalOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <Usb className="h-4 w-4" />
+                      Conectar Puerto USB/Serial
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onVerifyHidScanner(config.scannerSuffix, captureInput.trim() || undefined);
+                      setScannerModalOpen(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Confirmar y Activar Lector
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

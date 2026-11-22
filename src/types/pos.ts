@@ -1,11 +1,4 @@
-export type ProductCategory =
-  | 'Almacén'
-  | 'Lácteos'
-  | 'Bebidas'
-  | 'Verdulería'
-  | 'Panadería'
-  | 'Fiambrería'
-  | 'Limpieza';
+export type ProductCategory = string;
 
 export type ProductUnit = 'u' | 'kg';
 
@@ -18,7 +11,7 @@ export interface Product {
   unit: ProductUnit;
   costPrice: number;
   salePrice: number;
-  taxRate: number; // e.g., 21, 10.5, 0
+  taxRate: number; // DNIT Paraguay: 10, 5, 0
   stock: number;
   minStock: number;
   expiryDate?: string; // YYYY-MM-DD
@@ -134,6 +127,8 @@ export interface StoreSettings {
 
 export interface HardwareConfig {
   scannerEnabled: boolean;
+  scannerMode?: 'hid_keyboard' | 'serial_com';
+  scannerBaudRate?: number;
   scannerBeep: boolean;
   scannerSuffix: 'Enter' | 'Tab';
   scannerWeighedPrefix: string; // e.g., "20"
@@ -151,10 +146,10 @@ export interface ScanLogEntry {
   timestamp: string;
   code: string;
   matchedProduct?: string;
-  source: 'teclado_hid' | 'buscador' | 'balanza';
+  source: 'teclado_hid' | 'serial' | 'buscador' | 'balanza';
 }
 
-export type StaffRole = 'super_admin' | 'manager' | 'cashier';
+export type StaffRole = 'super_admin' | 'manager' | 'cashier' | 'warehouse';
 
 export interface StaffPermissions {
   operatePos: boolean;
@@ -174,6 +169,7 @@ export interface StaffProfile {
   email: string;
   fullName: string;
   role: StaffRole;
+  jobTitle?: string;
   active: boolean;
   permissions: StaffPermissions;
   createdByUid: string;

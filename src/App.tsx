@@ -35,6 +35,7 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { SalesHistory } from './components/SalesHistory';
 import { StoreProfileEditor } from './components/StoreProfileEditor';
 import {
+  DEFAULT_PRODUCT_CATEGORIES,
   INITIAL_CASH_MOVEMENTS,
   INITIAL_HARDWARE_CONFIG,
   INITIAL_PRODUCTS,
@@ -111,7 +112,7 @@ function serializeProductDoc(
     barcode: p.barcode.slice(0, 64),
     sku: p.sku.slice(0, 40),
     name: p.name.slice(0, 160),
-    category: p.category,
+    category: (p.category || 'Almacén').trim().slice(0, 40) || 'Almacén',
     unit: p.unit,
     costPrice: Number(p.costPrice) || 0,
     salePrice: Number(p.salePrice) || 0,
@@ -164,6 +165,7 @@ export default function App() {
   const [staffList, setStaffList] = useState<StaffProfile[]>([]);
   const [staffKeys, setStaffKeys] = useState<Record<string, string>>({});
   const [store, setStore] = useState<StoreSettings>(INITIAL_STORE_SETTINGS);
+  const [customCategories, setCustomCategories] = useState<string[]>(DEFAULT_PRODUCT_CATEGORIES);
   const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig>(INITIAL_HARDWARE_CONFIG);
   const [nextTicketSeq, setNextTicketSeq] = useState<number>(145);
 
@@ -176,12 +178,17 @@ export default function App() {
   const [scanLogs, setScanLogs] = useState<ScanLogEntry[]>([]);
   const [printerConnected, setPrinterConnected] = useState(false);
   const [scaleConnected, setScaleConnected] = useState(false);
+  const [scannerConnected, setScannerConnected] = useState(false);
 
   const printerPortRef = useRef<SerialPortLike | null>(null);
   const scalePortRef = useRef<SerialPortLike | null>(null);
   const scaleReaderCancelRef = useRef<boolean>(false);
+  const scannerPortRef = useRef<SerialPortLike | null>(null);
+  const scannerReaderCancelRef = useRef<boolean>(false);
+  const handleBarcodeScannedRef = useRef<(code: string, source?: 'teclado_hid' | 'serial' | 'buscador') => void>(() => {});
   const toastTimerRef = useRef<number | null>(null);
   const seededRef = useRef<boolean>(false);
+  const taxMigratedRef = useRef<boolean>(false);
 
   const showToast = useCallback((message: string, tone: 'ok' | 'warn' | 'err' = 'ok') => {
     setToast({ message, tone });
@@ -381,12 +388,52 @@ export default function App() {
 
     const storeFilter = where('storeId', '==', STORE_ID);
 
+    const REDUCED_5_IDS = new Set([
+      'p-02',
+      'p-03',
+      'p-04',
+      'p-05',
+      'p-06',
+      'p-09',
+      'p-15',
+      'p-16',
+      'p-17',
+      'p-20',
+    ]);
+
     const unsubProducts = onSnapshot(
       query(collection(db, 'products'), storeFilter),
       (snap) => {
-        const list = snap.docs.map((d) => d.data() as Product);
+        const legacyProducts: { id: string; nextRate: number }[] = [];
+        const list = snap.docs.map((d) => {
+          const item = d.data() as Product;
+          if (item.taxRate === 21 || item.taxRate === 10.5 || item.taxRate === 11) {
+            const nextRate =
+              item.taxRate === 10.5 || REDUCED_5_IDS.has(item.id) ? 5 : 10;
+            legacyProducts.push({ id: item.id, nextRate });
+            return { ...item, taxRate: nextRate };
+          }
+          return item;
+        });
         list.sort((a, b) => a.name.localeCompare(b.name));
         setProducts(list);
+
+        if (
+          legacyProducts.length > 0 &&
+          !taxMigratedRef.current &&
+          (currentUser.role === 'super_admin' || currentUser.permissions.manageInventory)
+        ) {
+          taxMigratedRef.current = true;
+          const batch = writeBatch(db);
+          for (const legacy of legacyProducts) {
+            batch.update(doc(db, 'products', legacy.id), {
+              taxRate: legacy.nextRate,
+              updatedByUid: currentUser.uid,
+              updatedAt: serverTimestamp(),
+            });
+          }
+          batch.commit().catch(() => {});
+        }
       },
       (err) => handleFirestoreError(err, OperationType.LIST, 'products')
     );
@@ -465,6 +512,14 @@ export default function App() {
               ...INITIAL_HARDWARE_CONFIG,
               ...(val.data as Partial<HardwareConfig>),
             });
+          } else if (val.id === 'categories' && Array.isArray(val.data?.items)) {
+            const cleaned = (val.data.items as unknown[])
+              .filter((c): c is string => typeof c === 'string')
+              .map((c) => c.trim().slice(0, 40))
+              .filter(Boolean);
+            if (cleaned.length > 0) {
+              setCustomCategories(Array.from(new Set(cleaned)).slice(0, 60));
+            }
           } else if (val.id === 'ticketSeq' && typeof val.data?.nextTicketSeq === 'number') {
             setNextTicketSeq(val.data.nextTicketSeq);
           }
@@ -486,7 +541,7 @@ export default function App() {
       );
     } else if (currentUser.role === 'manager' && currentUser.permissions.manageCashiers) {
       unsubStaff = onSnapshot(
-        query(collection(db, 'staff'), where('role', '==', 'cashier')),
+        query(collection(db, 'staff'), where('role', 'in', ['cashier', 'warehouse'])),
         (snap) => {
           const list = snap.docs.map((d) => d.data() as StaffProfile);
           list.sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -529,7 +584,8 @@ export default function App() {
       (s) =>
         s.role !== 'super_admin' &&
         (currentUser.role === 'super_admin' ||
-          (currentUser.role === 'manager' && s.role === 'cashier'))
+          (currentUser.role === 'manager' &&
+            (s.role === 'cashier' || s.role === 'warehouse')))
     );
 
     if (manageable.length === 0) {
@@ -698,7 +754,7 @@ export default function App() {
   );
 
   const handleBarcodeScanned = useCallback(
-    (rawCode: string, source: 'teclado_hid' | 'buscador' = 'teclado_hid') => {
+    (rawCode: string, source: 'teclado_hid' | 'serial' | 'buscador' = 'teclado_hid') => {
       const code = rawCode.trim();
       if (!code) return;
 
@@ -730,7 +786,18 @@ export default function App() {
 
       if (!matched) {
         if (hardwareConfig.scannerBeep) playErrorBeep();
-        showToast(`Código no encontrado: ${code}`, 'err');
+        showToast(
+          activeTab === 'hardware'
+            ? `Código leído (${code}) — sin producto asociado en inventario`
+            : `Código no encontrado: ${code}`,
+          activeTab === 'hardware' ? 'warn' : 'err'
+        );
+        return;
+      }
+
+      if (activeTab === 'hardware') {
+        if (hardwareConfig.scannerBeep) playScannerBeep();
+        showToast(`Lectura verificada: ${matched.name}`, 'ok');
         return;
       }
 
@@ -745,17 +812,22 @@ export default function App() {
       products,
       hardwareConfig.scannerWeighedPrefix,
       hardwareConfig.scannerBeep,
+      activeTab,
       scaleWeight,
       addProductToCart,
       showToast,
     ]
   );
 
+  useEffect(() => {
+    handleBarcodeScannedRef.current = handleBarcodeScanned;
+  }, [handleBarcodeScanned]);
+
   useBarcodeScanner({
     enabled:
-      Boolean(currentUser?.permissions.operatePos) &&
+      Boolean(currentUser?.permissions.operatePos || currentUser?.permissions.manageHardware) &&
       hardwareConfig.scannerEnabled &&
-      activeTab === 'pos' &&
+      (activeTab === 'pos' || activeTab === 'hardware') &&
       !receiptSale,
     suffix: hardwareConfig.scannerSuffix,
     onScan: (code) => handleBarcodeScanned(code, 'teclado_hid'),
@@ -865,6 +937,83 @@ export default function App() {
     scalePortRef.current = null;
     setScaleConnected(false);
     showToast('Balanza desconectada', 'ok');
+  };
+
+  const handleConnectScanner = async () => {
+    try {
+      const port = await requestAndOpenSerialPort(hardwareConfig.scannerBaudRate || 9600);
+      scannerPortRef.current = port;
+      scannerReaderCancelRef.current = false;
+      setScannerConnected(true);
+      if (!hardwareConfig.scannerEnabled || hardwareConfig.scannerMode !== 'serial_com') {
+        handleUpdateHardwareConfig({
+          ...hardwareConfig,
+          scannerEnabled: true,
+          scannerMode: 'serial_com',
+        });
+      }
+      showToast('Lector de código de barras conectado por USB/Serial', 'ok');
+
+      if (port.readable) {
+        const reader = port.readable.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        (async () => {
+          try {
+            while (!scannerReaderCancelRef.current) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              if (value) {
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split(/[\r\n\t]+/);
+                buffer = parts.pop() || '';
+                for (const part of parts) {
+                  const cleanCode = part.trim();
+                  if (cleanCode.length >= 3) {
+                    handleBarcodeScannedRef.current(cleanCode, 'serial');
+                  }
+                }
+              }
+            }
+          } catch {
+            // Stream closed
+          } finally {
+            reader.releaseLock();
+          }
+        })();
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Conexión de lector cancelada', 'warn');
+    }
+  };
+
+  const handleDisconnectScanner = async () => {
+    scannerReaderCancelRef.current = true;
+    try {
+      await scannerPortRef.current?.close();
+    } catch {
+      // ignore
+    }
+    scannerPortRef.current = null;
+    setScannerConnected(false);
+    showToast('Lector de barras desconectado', 'ok');
+  };
+
+  const handleVerifyHidScanner = (detectedSuffix?: 'Enter' | 'Tab', sampleCode?: string) => {
+    setScannerConnected(true);
+    const nextConfig: HardwareConfig = {
+      ...hardwareConfig,
+      scannerEnabled: true,
+      scannerMode: 'hid_keyboard',
+      ...(detectedSuffix ? { scannerSuffix: detectedSuffix } : {}),
+    };
+    handleUpdateHardwareConfig(nextConfig);
+    if (sampleCode && sampleCode.trim()) {
+      handleBarcodeScanned(sampleCode.trim(), 'teclado_hid');
+    } else {
+      if (nextConfig.scannerBeep) playScannerBeep();
+      showToast('Lector USB HID conectado y configurado', 'ok');
+    }
   };
 
   // --- Firestore POS Mutations ---
@@ -1267,6 +1416,49 @@ export default function App() {
     }
   };
 
+  const categories = useMemo(() => {
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const c of [...customCategories, ...products.map((p) => p.category)]) {
+      const clean = c.trim().slice(0, 40);
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(clean);
+      }
+    }
+    return (merged.length > 0 ? merged : DEFAULT_PRODUCT_CATEGORIES).slice(0, 60);
+  }, [customCategories, products]);
+
+  const handleSaveCategories = async (nextCategories: string[]) => {
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    for (const raw of nextCategories) {
+      const item = raw.trim().slice(0, 40);
+      if (!item) continue;
+      const key = item.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        clean.push(item);
+      }
+    }
+    const finalItems = (clean.length > 0 ? clean : ['Almacén']).slice(0, 60);
+    setCustomCategories(finalItems);
+    if (!currentUser) return;
+    try {
+      await setDoc(doc(db, 'settings', 'categories'), {
+        id: 'categories',
+        storeId: STORE_ID,
+        data: { items: finalItems },
+        updatedByUid: currentUser.uid,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'settings/categories');
+    }
+  };
+
   const handleUpdateHardwareConfig = async (next: HardwareConfig) => {
     setHardwareConfig(next);
     if (!currentUser) return;
@@ -1301,24 +1493,27 @@ export default function App() {
     }
   };
 
-  // --- Staff Management (Admin -> Gerente/Cajero, Gerente -> Cajero) ---
+  // --- Staff Management (Admin -> Gerente/Cajero/Depositero, Gerente -> Cajero/Depositero) ---
   const handleCreateStaff = async ({
     fullName,
     username,
     password,
     role,
+    jobTitle,
     permissions,
   }: {
     fullName: string;
     username: string;
     password: string;
-    role: 'manager' | 'cashier';
+    role: 'manager' | 'cashier' | 'warehouse';
+    jobTitle?: string;
     permissions: StaffPermissions;
   }) => {
     if (!currentUser) return;
     const cleanUsername = sanitizeStaffUsername(username);
     const email = normalizeStaffEmail(cleanUsername);
     const newUid = await createStaffAuthAccount(email, password);
+    const cleanJobTitle = (jobTitle || '').trim().slice(0, 60);
 
     const profilePayload: Record<string, unknown> = {
       uid: newUid,
@@ -1333,7 +1528,10 @@ export default function App() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-    if (currentUser.role === 'manager' && role === 'cashier') {
+    if (cleanJobTitle) {
+      profilePayload.jobTitle = cleanJobTitle;
+    }
+    if (currentUser.role === 'manager' && (role === 'cashier' || role === 'warehouse')) {
       profilePayload.assignedManagerUid = currentUser.uid;
     }
 
@@ -1358,6 +1556,7 @@ export default function App() {
       active: boolean;
       permissions: StaffPermissions;
       role: StaffProfile['role'];
+      jobTitle?: string;
       currentPassword?: string;
       newPassword?: string;
     }
@@ -1392,6 +1591,7 @@ export default function App() {
         fullName: updates.fullName.slice(0, 120),
         active: updates.active,
         role: updates.role,
+        jobTitle: (updates.jobTitle || '').trim().slice(0, 60),
         permissions: updates.permissions,
         updatedAt: serverTimestamp(),
       });
@@ -1432,27 +1632,15 @@ export default function App() {
     return <LoginScreen externalError={authError} />;
   }
 
-  const sectionTitle =
-    activeTab === 'pos'
-      ? 'Cobro Rápido'
-      : activeTab === 'sales'
-        ? 'Ventas, Tickets y Anulaciones'
-        : activeTab === 'inventory'
-          ? 'Control de Inventario y Vencimientos'
-          : activeTab === 'cash'
-            ? 'Gestión de Caja y Turnos'
-            : activeTab === 'hardware'
-              ? 'Integración de Equipos y Periféricos'
-              : activeTab === 'store'
-                ? 'Datos e Imágenes del Comercio'
-                : 'Personal y Permisos';
-
   const roleBadgeLabel =
-    currentUser.role === 'super_admin'
+    currentUser.jobTitle?.trim() ||
+    (currentUser.role === 'super_admin'
       ? 'Administrador General'
       : currentUser.role === 'manager'
         ? 'Gerente'
-        : 'Personal de Caja';
+        : currentUser.role === 'warehouse'
+          ? 'Depositero / Stock'
+          : 'Personal de Caja');
 
   const isDefaultStoreName = store.storeName.trim().toLowerCase() === 'mini market';
 
@@ -1580,7 +1768,7 @@ export default function App() {
         aria-label="Navegación principal"
         className="relative z-10 shrink-0 border-b border-amber-200/90 bg-white/95 backdrop-blur-xs"
       >
-        <div className="flex items-center justify-between gap-4 px-4 py-2.5 lg:px-6">
+        <div className="px-4 py-2.5 lg:px-6">
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -1615,16 +1803,12 @@ export default function App() {
               );
             })}
           </div>
-
-          <span className="hidden xl:inline-block whitespace-nowrap shrink-0 text-xs font-medium text-stone-500">
-            {sectionTitle}
-          </span>
         </div>
       </nav>
 
-      {/* Main Content Area */}
+      {/* Main Content Area (no z-index stacking context so modals overlay the header cleanly) */}
       <main
-        className={`relative z-10 flex-1 p-4 lg:p-5 ${
+        className={`relative flex-1 p-4 lg:p-5 ${
           activeTab === 'pos'
             ? 'lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden'
             : 'lg:overflow-y-auto'
@@ -1633,6 +1817,7 @@ export default function App() {
           {activeTab === 'pos' && currentUser.permissions.operatePos && (
             <PosTerminal
               products={products}
+              categories={categories}
               cart={cart}
               activeShift={activeShift}
               store={store}
@@ -1693,12 +1878,14 @@ export default function App() {
             (currentUser.permissions.viewInventory || currentUser.permissions.manageInventory) && (
               <InventoryManager
                 products={products}
+                categories={categories}
                 stockMovements={stockMovements}
                 store={store}
                 canManageInventory={currentUser.permissions.manageInventory}
                 onSaveProduct={handleSaveProduct}
                 onDeleteProduct={handleDeleteProduct}
                 onAdjustStock={handleAdjustStock}
+                onSaveCategories={handleSaveCategories}
               />
             )}
 
@@ -1726,12 +1913,16 @@ export default function App() {
             <HardwareCenter
               config={hardwareConfig}
               store={store}
+              scannerConnected={scannerConnected}
               printerConnected={printerConnected}
               scaleConnected={scaleConnected}
               scaleWeight={scaleWeight}
               scanLogs={scanLogs}
               onUpdateConfig={handleUpdateHardwareConfig}
               onOpenStoreSettings={() => setActiveTab('store')}
+              onConnectScanner={handleConnectScanner}
+              onDisconnectScanner={handleDisconnectScanner}
+              onVerifyHidScanner={handleVerifyHidScanner}
               onConnectPrinter={handleConnectPrinter}
               onDisconnectPrinter={handleDisconnectPrinter}
               onConnectScale={handleConnectScale}

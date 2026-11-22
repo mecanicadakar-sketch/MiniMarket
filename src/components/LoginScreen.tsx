@@ -135,7 +135,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
                   : 'text-stone-600 hover:text-emerald-950'
               }`}
             >
-              Gerente / Caja
+              Gerente / Personal
             </button>
           </div>
 
@@ -222,8 +222,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
               </button>
 
               <p className="text-center text-[11px] text-stone-500">
-                Las credenciales de Gerente son otorgadas por el Administrador General y las de
-                Personal de Caja por el Gerente.
+                Las credenciales de Gerente, Personal de Caja o Depositero son otorgadas desde
+                Personal y Permisos.
               </p>
             </form>
           )}

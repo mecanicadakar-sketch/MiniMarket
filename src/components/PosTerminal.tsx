@@ -32,6 +32,7 @@ import {
 
 interface PosTerminalProps {
   products: Product[];
+  categories: string[];
   cart: CartItem[];
   activeShift: Shift | null;
   store: StoreSettings;
@@ -53,19 +54,9 @@ interface PosTerminalProps {
   onRequestOpenShift: () => void;
 }
 
-const CATEGORIES: ('Todos' | ProductCategory)[] = [
-  'Todos',
-  'Almacén',
-  'Lácteos',
-  'Bebidas',
-  'Verdulería',
-  'Panadería',
-  'Fiambrería',
-  'Limpieza',
-];
-
 export const PosTerminal: React.FC<PosTerminalProps> = ({
   products,
+  categories,
   cart,
   activeShift,
   store,
@@ -102,6 +93,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [paymentRef, setPaymentRef] = useState('');
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const filterCategories = useMemo<('Todos' | ProductCategory)[]>(
+    () => ['Todos', ...categories],
+    [categories]
+  );
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -382,7 +377,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
         {/* Category Segmented Buttons */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-1">
-          {CATEGORIES.map((cat) => {
+          {filterCategories.map((cat) => {
             const active = selectedCategory === cat;
             return (
               <button

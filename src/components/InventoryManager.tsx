@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -8,6 +9,7 @@ import {
   PackagePlus,
   Plus,
   Search,
+  Tag,
   Trash2,
   X,
 } from 'lucide-react';
@@ -30,6 +32,7 @@ import {
 
 interface InventoryManagerProps {
   products: Product[];
+  categories: string[];
   stockMovements: StockMovement[];
   store: StoreSettings;
   canManageInventory?: boolean;
@@ -43,28 +46,21 @@ interface InventoryManagerProps {
     newExpiryDate?: string;
     newBatchCode?: string;
   }) => void;
+  onSaveCategories: (nextCategories: string[]) => Promise<void> | void;
 }
 
 type InventoryFilter = 'all' | 'low_stock' | 'expiring' | 'weighed';
 
-const CATEGORIES: ProductCategory[] = [
-  'Almacén',
-  'Lácteos',
-  'Bebidas',
-  'Verdulería',
-  'Panadería',
-  'Fiambrería',
-  'Limpieza',
-];
-
 export const InventoryManager: React.FC<InventoryManagerProps> = ({
   products,
+  categories,
   stockMovements,
   store,
   canManageInventory = true,
   onSaveProduct,
   onDeleteProduct,
   onAdjustStock,
+  onSaveCategories,
 }) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<InventoryFilter>('all');
@@ -73,6 +69,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   // Create / Edit modal state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isNewProduct, setIsNewProduct] = useState(false);
+  const [addingInlineCategory, setAddingInlineCategory] = useState(false);
+  const [inlineCategoryName, setInlineCategoryName] = useState('');
+
+  // Categories manager modal state
+  const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // Stock adjustment modal state
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
@@ -128,18 +130,29 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     });
   }, [products, filter, search]);
 
+  const addCategoryItem = (rawName: string): string | null => {
+    const clean = rawName.trim().slice(0, 40);
+    if (!clean) return null;
+    const existing = categories.find((c) => c.toLowerCase() === clean.toLowerCase());
+    if (existing) return existing;
+    void onSaveCategories([...categories, clean]);
+    return clean;
+  };
+
   const openNewModal = () => {
     setIsNewProduct(true);
+    setAddingInlineCategory(false);
+    setInlineCategoryName('');
     setEditingProduct({
       id: `p-${Date.now()}`,
       barcode: generateEan13(),
       sku: `ART-${String(products.length + 1).padStart(3, '0')}`,
       name: '',
-      category: 'Almacén',
+      category: categories[0] || 'Almacén',
       unit: 'u',
       costPrice: 0,
       salePrice: 0,
-      taxRate: 21,
+      taxRate: 10,
       stock: 0,
       minStock: 5,
       expiryDate: '',
@@ -149,7 +162,17 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const openEditModal = (product: Product) => {
     setIsNewProduct(false);
-    setEditingProduct({ ...product });
+    setAddingInlineCategory(false);
+    setInlineCategoryName('');
+    setEditingProduct({
+      ...product,
+      taxRate:
+        product.taxRate === 0
+          ? 0
+          : product.taxRate === 5 || product.taxRate === 10.5
+            ? 5
+            : 10,
+    });
   };
 
   const openAdjustModal = (product: Product) => {
@@ -338,14 +361,27 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             Exportar CSV
           </button>
           {canManageInventory && (
-            <button
-              type="button"
-              onClick={openNewModal}
-              className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-            >
-              <Plus className="h-4 w-4" />
-              Nuevo Producto
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewCategoryName('');
+                  setCategoriesModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-amber-50"
+              >
+                <Tag className="h-4 w-4 text-orange-600" />
+                Categorías
+              </button>
+              <button
+                type="button"
+                onClick={openNewModal}
+                className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo Producto
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -637,23 +673,77 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               </div>
 
               <div>
-                <label className="block font-medium text-stone-700">Categoría</label>
-                <select
-                  value={editingProduct.category}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      category: e.target.value as ProductCategory,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block font-medium text-stone-700">Categoría</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingInlineCategory((v) => !v);
+                      setInlineCategoryName('');
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {addingInlineCategory ? 'Cancelar' : 'Nueva categoría'}
+                  </button>
+                </div>
+                {addingInlineCategory ? (
+                  <div className="mt-1 flex gap-1.5">
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={inlineCategoryName}
+                      onChange={(e) => setInlineCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const added = addCategoryItem(inlineCategoryName);
+                          if (added) {
+                            setEditingProduct({ ...editingProduct, category: added });
+                            setAddingInlineCategory(false);
+                            setInlineCategoryName('');
+                          }
+                        }
+                      }}
+                      placeholder="Ej: Ferretería, Tienda, Electrónica"
+                      className="flex-1 rounded-lg border border-orange-300 px-2.5 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const added = addCategoryItem(inlineCategoryName);
+                        if (added) {
+                          setEditingProduct({ ...editingProduct, category: added });
+                          setAddingInlineCategory(false);
+                          setInlineCategoryName('');
+                        }
+                      }}
+                      className="whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={editingProduct.category}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        category: e.target.value as ProductCategory,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                  >
+                    {Array.from(new Set([...categories, editingProduct.category].filter(Boolean))).map(
+                      (c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      )
+                    )}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -765,9 +855,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   }
                   className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                 >
-                  <option value={21}>21% (General)</option>
-                  <option value={10.5}>10.5% (Reducido)</option>
-                  <option value={0}>0% (Exento)</option>
+                  <option value={10}>10% (Tasa general)</option>
+                  <option value={5}>5% (Tasa reducida · Canasta familiar)</option>
+                  <option value={0}>0% (Exenta)</option>
                 </select>
               </div>
             </div>
@@ -919,6 +1009,134 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           </form>
         </div>
       )}
+
+      {/* Categories Management Modal */}
+      {categoriesModalOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-amber-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
+                <div className="flex items-center gap-2.5">
+                  <Tag className="h-5 w-5 text-orange-600" />
+                  <h3 className="font-display text-sm font-bold text-emerald-950">
+                    Categorías de Productos
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCategoriesModalOpen(false)}
+                  className="rounded-lg p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                  aria-label="Cerrar categorías"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 p-5 text-xs">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const added = addCategoryItem(newCategoryName);
+                    if (added) setNewCategoryName('');
+                  }}
+                  className="space-y-2"
+                >
+                  <label className="block font-medium text-stone-700">
+                    Agregar nueva categoría
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      placeholder="Ej: Ferretería, Tienda, Electrónica..."
+                      className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newCategoryName.trim()}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar
+                    </button>
+                  </div>
+                </form>
+
+                <div>
+                  <p className="mb-2 text-[11px] font-medium text-stone-500">
+                    Sugerencias rápidas
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Ferretería', 'Tienda', 'Electrónica', 'Bazar', 'Perfumería', 'Librería']
+                      .filter((s) => !categories.some((c) => c.toLowerCase() === s.toLowerCase()))
+                      .map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => addCategoryItem(suggestion)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-1 text-xs font-medium text-emerald-950 hover:bg-amber-100"
+                        >
+                          <Plus className="h-3 w-3 text-orange-600" />
+                          {suggestion}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 font-medium text-stone-700">
+                    Categorías activas ({categories.length})
+                  </p>
+                  <div className="max-h-60 divide-y divide-amber-100 overflow-y-auto rounded-xl border border-amber-200/80">
+                    {categories.map((cat) => {
+                      const count = products.filter((p) => p.category === cat).length;
+                      return (
+                        <div
+                          key={cat}
+                          className="flex items-center justify-between px-3.5 py-2.5"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate font-medium text-emerald-950">{cat}</span>
+                            <span className="font-mono text-[11px] text-stone-500 tabular-nums">
+                              ({count} prod.)
+                            </span>
+                          </div>
+                          {categories.length > 1 && count === 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSaveCategories(categories.filter((c) => c !== cat))
+                              }
+                              title={`Quitar categoría ${cat}`}
+                              className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end border-t border-amber-100 bg-amber-50/30 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => setCategoriesModalOpen(false)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  Listo
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -90,7 +90,7 @@ service cloud.firestore {
         && perms.manageManagers is bool
         // Strictly block privilege escalation in permissions map by role
         && (role == 'super_admin' || perms.manageManagers == false)
-        && (role != 'cashier' || (perms.manageCashiers == false && perms.manageManagers == false));
+        && ((role != 'cashier' && role != 'warehouse') || (perms.manageCashiers == false && perms.manageManagers == false));
     }
 
     function isValidStaffProfile(data) {
@@ -114,6 +114,7 @@ service cloud.firestore {
           'email',
           'fullName',
           'role',
+          'jobTitle',
           'active',
           'permissions',
           'createdByUid',
@@ -126,7 +127,8 @@ service cloud.firestore {
         && data.username is string && data.username.size() >= 2 && data.username.size() <= 80
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
         && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
-        && data.role in ['super_admin', 'manager', 'cashier']
+        && data.role in ['super_admin', 'manager', 'cashier', 'warehouse']
+        && (!('jobTitle' in data) || (data.jobTitle is string && data.jobTitle.size() <= 60))
         && data.active is bool
         && isValidPermissionsMap(data.permissions, data.role)
         && data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128
@@ -190,7 +192,7 @@ service cloud.firestore {
         && data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64
         && data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 40
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
-        && data.category in ['Almacén', 'Lácteos', 'Bebidas', 'Verdulería', 'Panadería', 'Fiambrería', 'Limpieza']
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 40
         && data.unit in ['u', 'kg']
         && data.costPrice is number && data.costPrice >= 0
         && data.salePrice is number && data.salePrice >= 0
@@ -429,6 +431,18 @@ service cloud.firestore {
         && (!('topBannerUrl' in d) || (d.topBannerUrl is string && d.topBannerUrl.size() <= 250000));
     }
 
+    function isValidCategoriesSettingData(d) {
+      return d is map
+        && d.keys().hasAll(['items'])
+        && d.keys().hasOnly(['items'])
+        && d.items is list
+        && d.items.size() >= 1
+        && d.items.size() <= 60
+        && d.items[0] is string
+        && d.items[0].size() >= 1
+        && d.items[0].size() <= 40;
+    }
+
     function isValidAppSetting(data) {
       return data is map
         && data.keys().hasAll(['id', 'storeId', 'data', 'updatedByUid', 'updatedAt'])
@@ -450,7 +464,7 @@ service cloud.firestore {
       allow get: if isValidId(staffId) && (
         isSuperAdmin()
         || (isSignedIn() && request.auth.uid == staffId)
-        || (isManager() && hasPermission('manageCashiers') && existing().role == 'cashier')
+        || (isManager() && hasPermission('manageCashiers') && existing().role in ['cashier', 'warehouse'])
       );
 
       allow list: if isSuperAdmin() || (
@@ -458,7 +472,7 @@ service cloud.firestore {
           resource.data.uid == request.auth.uid
           || (staffData().role == 'manager'
               && staffData().permissions.manageCashiers == true
-              && resource.data.role == 'cashier')
+              && resource.data.role in ['cashier', 'warehouse'])
         )
       );
 
@@ -469,15 +483,15 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && (
-          // Super Admin bootstrapping their own super_admin profile or creating managers/cashiers
+          // Super Admin bootstrapping their own super_admin profile or creating managers/cashiers/warehouse
           (isSuperAdmin() && incoming().createdByRole == 'super_admin' && (
             (staffId == request.auth.uid && incoming().role == 'super_admin')
-            || (incoming().role in ['manager', 'cashier'])
+            || (incoming().role in ['manager', 'cashier', 'warehouse'])
           ))
-          // Manager creating cashiers only
+          // Manager creating cashiers or warehouse/stocker staff only
           || (isManager() && hasPermission('manageCashiers')
               && incoming().createdByRole == 'manager'
-              && incoming().role == 'cashier')
+              && incoming().role in ['cashier', 'warehouse'])
         );
 
       allow update: if isValidId(staffId)
@@ -489,26 +503,26 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && (
           (isSuperAdmin()
-            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'email', 'role', 'active', 'permissions', 'assignedManagerUid', 'updatedAt'])
-            && (staffId == request.auth.uid || incoming().role in ['manager', 'cashier']))
+            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'email', 'role', 'jobTitle', 'active', 'permissions', 'assignedManagerUid', 'updatedAt'])
+            && (staffId == request.auth.uid || incoming().role in ['manager', 'cashier', 'warehouse']))
           || (isManager() && hasPermission('manageCashiers')
-              && existing().role == 'cashier'
-              && incoming().role == 'cashier'
-              && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'active', 'permissions', 'assignedManagerUid', 'updatedAt']))
+              && existing().role in ['cashier', 'warehouse']
+              && incoming().role in ['cashier', 'warehouse']
+              && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'jobTitle', 'active', 'permissions', 'assignedManagerUid', 'updatedAt']))
         );
 
       allow delete: if isValidId(staffId) && (
         (isSuperAdmin() && staffId != request.auth.uid)
-        || (isManager() && hasPermission('manageCashiers') && existing().role == 'cashier')
+        || (isManager() && hasPermission('manageCashiers') && existing().role in ['cashier', 'warehouse'])
       );
 
       match /credentials/{credId} {
         allow get: if isValidId(staffId) && isValidId(credId) && credId == 'access'
           && exists(/databases/$(database)/documents/staff/$(staffId))
           && (
-            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
           );
 
         allow list: if false;
@@ -519,17 +533,17 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && exists(/databases/$(database)/documents/staff/$(staffId))
           && (
-            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
           );
 
         allow delete: if isValidId(staffId) && isValidId(credId) && credId == 'access'
           && exists(/databases/$(database)/documents/staff/$(staffId))
           && (
-            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
           );
       }
     }
@@ -680,11 +694,13 @@ service cloud.firestore {
         && incoming().updatedByUid == request.auth.uid
         && incoming().updatedAt == request.time
         && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
+        && (settingId != 'categories' || isValidCategoriesSettingData(incoming().data))
         && (
           isSuperAdmin()
           || hasPermission('manageHardware')
           || (settingId == 'store' && isManager())
           || (settingId == 'ticketSeq' && hasPermission('operatePos'))
+          || (settingId == 'categories' && hasPermission('manageInventory'))
         );
 
       allow update: if isValidId(settingId)
@@ -695,11 +711,13 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['data', 'updatedByUid', 'updatedAt'])
         && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
+        && (settingId != 'categories' || isValidCategoriesSettingData(incoming().data))
         && (
           isSuperAdmin()
           || hasPermission('manageHardware')
           || (settingId == 'store' && isManager())
           || (settingId == 'ticketSeq' && hasPermission('operatePos'))
+          || (settingId == 'categories' && hasPermission('manageInventory'))
         );
 
       allow delete: if isValidId(settingId) && isSuperAdmin();

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check,
   Copy,
@@ -26,7 +27,8 @@ interface AdminPanelProps {
     fullName: string;
     username: string;
     password: string;
-    role: 'manager' | 'cashier';
+    role: 'manager' | 'cashier' | 'warehouse';
+    jobTitle?: string;
     permissions: StaffPermissions;
   }) => Promise<void>;
   onUpdateStaff: (
@@ -36,6 +38,7 @@ interface AdminPanelProps {
       active: boolean;
       permissions: StaffPermissions;
       role: StaffRole;
+      jobTitle?: string;
       currentPassword?: string;
       newPassword?: string;
     }
@@ -62,6 +65,18 @@ const DEFAULT_CASHIER_PERMS: StaffPermissions = {
   manageCash: true,
   viewInventory: true,
   manageInventory: false,
+  manageHardware: false,
+  manageCashiers: false,
+  manageManagers: false,
+};
+
+const DEFAULT_WAREHOUSE_PERMS: StaffPermissions = {
+  operatePos: false,
+  applyDiscounts: false,
+  voidSales: false,
+  manageCash: false,
+  viewInventory: true,
+  manageInventory: true,
   manageHardware: false,
   manageCashiers: false,
   manageManagers: false,
@@ -101,8 +116,8 @@ const PERMISSION_LABELS: {
   },
   {
     key: 'manageInventory',
-    label: 'Administrar stock y productos',
-    description: 'Crear/editar productos, ajustar precios, mermas e ingresos.',
+    label: 'Cargar stock y administrar productos',
+    description: 'Crear/editar productos, cargar ingresos de mercadería, precios y mermas.',
   },
   {
     key: 'manageHardware',
@@ -111,8 +126,8 @@ const PERMISSION_LABELS: {
   },
   {
     key: 'manageCashiers',
-    label: 'Administrar personal de caja',
-    description: 'Crear cuentas de cajeros y otorgarles usuario, contraseña y permisos.',
+    label: 'Administrar personal operativo',
+    description: 'Crear cuentas de cajeros o depositeros con usuario, clave y permisos.',
     managerOrAdmin: true,
   },
 ];
@@ -120,6 +135,14 @@ const PERMISSION_LABELS: {
 function roleDisplayName(role: StaffRole): string {
   if (role === 'super_admin') return 'Administrador General';
   if (role === 'manager') return 'Gerente';
+  if (role === 'warehouse') return 'Depositero / Stock';
+  return 'Personal de Caja';
+}
+
+function defaultJobTitleForRole(role: StaffRole): string {
+  if (role === 'super_admin') return 'Administrador General';
+  if (role === 'manager') return 'Gerente';
+  if (role === 'warehouse') return 'Depositero';
   return 'Personal de Caja';
 }
 
@@ -161,8 +184,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showCreatePwd, setShowCreatePwd] = useState(true);
-  const [newRole, setNewRole] = useState<'manager' | 'cashier'>(
+  const [newRole, setNewRole] = useState<'manager' | 'cashier' | 'warehouse'>(
     isSuperAdmin ? 'manager' : 'cashier'
+  );
+  const [newJobTitle, setNewJobTitle] = useState(
+    isSuperAdmin ? 'Gerente' : 'Personal de Caja'
   );
   const [newPermissions, setNewPermissions] = useState<StaffPermissions>(
     isSuperAdmin ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_CASHIER_PERMS }
@@ -172,6 +198,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editName, setEditName] = useState('');
   const [editActive, setEditActive] = useState(true);
   const [editRole, setEditRole] = useState<StaffRole>('cashier');
+  const [editJobTitle, setEditJobTitle] = useState('');
   const [editCurrentPwd, setEditCurrentPwd] = useState('');
   const [editNewPwd, setEditNewPwd] = useState('');
   const [showEditPwd, setShowEditPwd] = useState(true);
@@ -181,14 +208,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const visibleStaff = useMemo(() => {
     if (isSuperAdmin) return staffList;
-    return staffList.filter((s) => s.role === 'cashier' || s.uid === currentUser.uid);
+    return staffList.filter(
+      (s) => s.role === 'cashier' || s.role === 'warehouse' || s.uid === currentUser.uid
+    );
   }, [staffList, isSuperAdmin, currentUser.uid]);
 
   const counts = useMemo(() => {
     const managers = staffList.filter((s) => s.role === 'manager' && s.active).length;
     const cashiers = staffList.filter((s) => s.role === 'cashier' && s.active).length;
+    const warehouse = staffList.filter((s) => s.role === 'warehouse' && s.active).length;
     const inactive = staffList.filter((s) => !s.active).length;
-    return { managers, cashiers, inactive, total: visibleStaff.length };
+    return { managers, cashiers, warehouse, inactive, total: visibleStaff.length };
   }, [staffList, visibleStaff.length]);
 
   const handleCopy = async (id: string, value: string) => {
@@ -203,8 +233,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const openCreateModal = () => {
-    const defaultRole: 'manager' | 'cashier' = isSuperAdmin ? 'manager' : 'cashier';
+    const defaultRole: 'manager' | 'cashier' | 'warehouse' = isSuperAdmin ? 'manager' : 'cashier';
     setNewRole(defaultRole);
+    setNewJobTitle(defaultJobTitleForRole(defaultRole));
     setNewPermissions(
       defaultRole === 'manager' ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_CASHIER_PERMS }
     );
@@ -217,11 +248,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCreateOpen(true);
   };
 
-  const handleRoleChangeOnCreate = (role: 'manager' | 'cashier') => {
+  const handleRoleChangeOnCreate = (role: 'manager' | 'cashier' | 'warehouse') => {
     setNewRole(role);
-    setNewPermissions(
-      role === 'manager' ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_CASHIER_PERMS }
-    );
+    const defaults = ['Gerente', 'Personal de Caja', 'Depositero', ''];
+    if (defaults.includes(newJobTitle.trim())) {
+      setNewJobTitle(defaultJobTitleForRole(role));
+    }
+    if (role === 'manager') {
+      setNewPermissions({ ...DEFAULT_MANAGER_PERMS });
+    } else if (role === 'warehouse') {
+      setNewPermissions({ ...DEFAULT_WAREHOUSE_PERMS });
+    } else {
+      setNewPermissions({ ...DEFAULT_CASHIER_PERMS });
+    }
   };
 
   const openEditModal = (staff: StaffProfile) => {
@@ -229,6 +268,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditName(staff.fullName);
     setEditActive(staff.active);
     setEditRole(staff.role);
+    setEditJobTitle(staff.jobTitle || defaultJobTitleForRole(staff.role));
     setEditCurrentPwd('');
     setEditNewPwd('');
     setShowEditPwd(true);
@@ -252,10 +292,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
 
+    const sanitizedRole: 'manager' | 'cashier' | 'warehouse' = isSuperAdmin
+      ? newRole
+      : newRole === 'warehouse'
+        ? 'warehouse'
+        : 'cashier';
+
     const sanitizedPerms: StaffPermissions = {
       ...newPermissions,
       manageManagers: false,
-      manageCashiers: newRole === 'cashier' ? false : newPermissions.manageCashiers,
+      manageCashiers: sanitizedRole === 'manager' ? newPermissions.manageCashiers : false,
     };
 
     setSubmitting(true);
@@ -264,7 +310,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         fullName: fullName.trim(),
         username: cleanUser,
         password,
-        role: isSuperAdmin ? newRole : 'cashier',
+        role: sanitizedRole,
+        jobTitle: newJobTitle.trim() || defaultJobTitleForRole(sanitizedRole),
         permissions: sanitizedPerms,
       });
       setCreateOpen(false);
@@ -313,12 +360,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       ? editingStaff.role === 'super_admin'
         ? 'super_admin'
         : editRole
-      : 'cashier';
+      : editRole === 'warehouse'
+        ? 'warehouse'
+        : 'cashier';
 
     const sanitizedPerms: StaffPermissions = {
       ...editPermissions,
       manageManagers: safeRole === 'super_admin',
-      manageCashiers: safeRole === 'cashier' ? false : editPermissions.manageCashiers,
+      manageCashiers: safeRole === 'manager' ? editPermissions.manageCashiers : safeRole === 'super_admin',
     };
 
     try {
@@ -326,6 +375,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         fullName: editName.trim(),
         active: editActive,
         role: safeRole,
+        jobTitle: editJobTitle.trim() || defaultJobTitleForRole(safeRole),
         permissions: sanitizedPerms,
         currentPassword: editCurrentPwd.trim() || undefined,
         newPassword: trimmedNewPwd || undefined,
@@ -354,11 +404,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const toggleActiveQuick = async (staff: StaffProfile) => {
     if (staff.role === 'super_admin') return;
-    if (!isSuperAdmin && staff.role !== 'cashier') return;
+    if (!isSuperAdmin && staff.role !== 'cashier' && staff.role !== 'warehouse') return;
     await onUpdateStaff(staff.uid, {
       fullName: staff.fullName,
       active: !staff.active,
       role: staff.role,
+      jobTitle: staff.jobTitle,
       permissions: staff.permissions,
     });
   };
@@ -372,7 +423,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
           <p className="text-xs text-stone-500">Tu nivel de acceso</p>
           <p className="mt-1 font-display text-base font-bold text-emerald-950">
-            {roleDisplayName(currentUser.role)}
+            {currentUser.jobTitle?.trim() || roleDisplayName(currentUser.role)}
           </p>
           <p className="mt-0.5 truncate text-xs text-stone-500">
             {isInternalStaffEmail(currentUser.email)
@@ -386,15 +437,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <p className="mt-1 font-mono text-2xl font-bold text-orange-600 tabular-nums">
             {counts.managers}
           </p>
-          <p className="mt-0.5 text-xs text-stone-500">Gestionan stock y cajeros</p>
+          <p className="mt-0.5 text-xs text-stone-500">Gestionan stock y personal</p>
         </div>
 
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
-          <p className="text-xs text-stone-500">Personal de caja activo</p>
+          <p className="text-xs text-stone-500">Caja y Depósito activos</p>
           <p className="mt-1 font-mono text-2xl font-bold text-emerald-700 tabular-nums">
-            {counts.cashiers}
+            {counts.cashiers + counts.warehouse}
           </p>
-          <p className="mt-0.5 text-xs text-stone-500">Operación en punto de venta</p>
+          <p className="mt-0.5 text-xs text-stone-500">
+            {counts.cashiers} caja · {counts.warehouse} depósito / stock
+          </p>
         </div>
 
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
@@ -411,13 +464,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div>
           <h2 className="font-display text-sm font-semibold text-emerald-950">
             {isSuperAdmin
-              ? 'Administración de Gerentes y Personal de Caja'
-              : 'Administración de Personal de Ventas en Caja'}
+              ? 'Administración de Gerentes, Caja y Depósito'
+              : 'Administración de Personal de Caja y Depósito'}
           </h2>
           <p className="mt-0.5 text-xs text-stone-500">
             {isSuperAdmin
-              ? 'Como Administrador General podés otorgar usuario, clave de acceso y permisos a Gerentes y Personal de Caja.'
-              : 'Como Gerente podés crear cuentas con usuario y clave de acceso para el Personal de Caja y editar sus permisos.'}
+              ? 'Como Administrador General podés asignar usuario, clave de acceso, cargo (ej: Gerente, Cajero, Depositero) y permisos granulares.'
+              : 'Como Gerente podés crear cuentas con usuario, clave y permisos para Personal de Caja o Depositero / Stock.'}
           </p>
         </div>
 
@@ -427,7 +480,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
         >
           <Plus className="h-4 w-4" />
-          {isSuperAdmin ? 'Alta de Personal' : 'Nuevo Cajero'}
+          Alta de Personal
         </button>
       </div>
 
@@ -438,7 +491,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <thead className="border-b border-amber-200/70 bg-amber-50/50 text-stone-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Nombre y usuario</th>
-                <th className="px-4 py-3 font-medium">Rol</th>
+                <th className="px-4 py-3 font-medium">Puesto / Rol</th>
                 <th className="px-4 py-3 font-medium">Clave de acceso</th>
                 <th className="px-4 py-3 font-medium">Permisos habilitados</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -450,7 +503,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 const canManageThisUser =
                   staff.role !== 'super_admin' &&
                   (isSuperAdmin ||
-                    (currentUser.permissions.manageCashiers && staff.role === 'cashier'));
+                    (currentUser.permissions.manageCashiers &&
+                      (staff.role === 'cashier' || staff.role === 'warehouse')));
 
                 const activePermsList = PERMISSION_LABELS.filter(
                   (p) => staff.permissions[p.key]
@@ -460,6 +514,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 const isKeyRevealed = Boolean(revealedKeys[staff.uid]);
                 const showRealEmail =
                   staff.email && !isInternalStaffEmail(staff.email) && staff.role === 'super_admin';
+                const displayJobTitle = staff.jobTitle?.trim() || roleDisplayName(staff.role);
+                const baseRoleLabel = roleDisplayName(staff.role);
 
                 return (
                   <tr key={staff.uid} className="hover:bg-amber-50/40">
@@ -471,8 +527,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 whitespace-nowrap font-medium text-stone-800">
-                      {roleDisplayName(staff.role)}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-semibold text-stone-800">{displayJobTitle}</div>
+                      {displayJobTitle.toLowerCase() !== baseRoleLabel.toLowerCase() && (
+                        <div className="text-[11px] text-stone-500">{baseRoleLabel}</div>
+                      )}
                     </td>
 
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -592,456 +651,519 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
-      {/* Create Staff Modal */}
-      {createOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Crear cuenta de personal"
-        >
-          <form
-            onSubmit={handleCreateSubmit}
-            className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-xl"
+      {/* Create Staff Modal via Portal so top banner never overlaps it */}
+      {createOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Crear cuenta de personal"
           >
-            <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
-              <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-orange-600" />
-                <h3 className="font-display text-base font-semibold text-emerald-950">
-                  Otorgar usuario, clave de acceso y permisos
-                </h3>
+            <form
+              onSubmit={handleCreateSubmit}
+              className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-orange-600" />
+                  <h3 className="font-display text-base font-semibold text-emerald-950">
+                    Alta de personal · Usuario, cargo y permisos
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(false)}
+                  className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
-              {formError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
-                  <p>{formError}</p>
-                  {showAuthProviderNotice && (
-                    <a
-                      href="https://console.firebase.google.com/project/project-bca7c627-a682-4fa4-b57/authentication/providers"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center gap-1 font-semibold underline"
-                    >
-                      Abrir Firebase Authentication Providers
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="block font-medium text-stone-700">Nombre y apellido</label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Ej: José González"
-                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-stone-700">
-                    Usuario de acceso
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Ej: jose o caja01"
-                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                  />
-                  {cleanUsernameInput && (
-                    <p className="mt-1 text-[11px] text-emerald-800">
-                      Ingresará en «Gerente / Caja» con el usuario:{' '}
-                      <span className="font-mono font-semibold">{cleanUsernameInput}</span>
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="block font-medium text-stone-700">
-                      Clave asignada (mín. 6)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPassword(generateAccessKey());
-                        setShowCreatePwd(true);
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Generar clave
-                    </button>
-                  </div>
-                  <div className="relative mt-1 flex items-center">
-                    <input
-                      type={showCreatePwd ? 'text' : 'password'}
-                      required
-                      minLength={6}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      className="w-full rounded-lg border border-stone-300 py-2 pl-3 pr-16 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                    />
-                    <div className="absolute right-1.5 flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setShowCreatePwd((v) => !v)}
-                        title={showCreatePwd ? 'Ocultar' : 'Mostrar'}
-                        className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                {formError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
+                    <p>{formError}</p>
+                    {showAuthProviderNotice && (
+                      <a
+                        href="https://console.firebase.google.com/project/project-bca7c627-a682-4fa4-b57/authentication/providers"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 font-semibold underline"
                       >
-                        {showCreatePwd ? (
-                          <EyeOff className="h-3.5 w-3.5" />
-                        ) : (
-                          <Eye className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('create-pwd', password)}
-                        title="Copiar clave"
-                        className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
-                      >
-                        {copiedId === 'create-pwd' ? (
-                          <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {isSuperAdmin && (
-                <div>
-                  <label className="block font-medium text-stone-700">Rol asignado</label>
-                  <div className="mt-1.5 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleRoleChangeOnCreate('manager')}
-                      className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
-                        newRole === 'manager'
-                          ? 'border-orange-500 bg-orange-500 text-white'
-                          : 'border-amber-200 bg-white text-stone-700 hover:bg-amber-50'
-                      }`}
-                    >
-                      <div className="text-sm font-semibold">Gerente</div>
-                      <div className="text-xs opacity-90">Administra stock y cajeros</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRoleChangeOnCreate('cashier')}
-                      className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
-                        newRole === 'cashier'
-                          ? 'border-emerald-700 bg-emerald-700 text-white'
-                          : 'border-amber-200 bg-white text-stone-700 hover:bg-amber-50'
-                      }`}
-                    >
-                      <div className="text-sm font-semibold">Personal de Caja</div>
-                      <div className="text-xs opacity-90">Ventas en caja y cobro</div>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <p className="font-medium text-stone-700">Permisos del usuario</p>
-                <div className="mt-2 divide-y divide-amber-100 rounded-xl border border-amber-200">
-                  {PERMISSION_LABELS.filter(
-                    (perm) => !perm.managerOrAdmin || (isSuperAdmin && newRole === 'manager')
-                  ).map((perm) => (
-                    <label
-                      key={perm.key}
-                      className="flex cursor-pointer items-start justify-between gap-3 px-3.5 py-2.5 hover:bg-amber-50/50"
-                    >
-                      <div>
-                        <p className="font-medium text-emerald-950">{perm.label}</p>
-                        <p className="text-[11px] text-stone-500">{perm.description}</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={newPermissions[perm.key]}
-                        onChange={(e) =>
-                          setNewPermissions({
-                            ...newPermissions,
-                            [perm.key]: e.target.checked,
-                          })
-                        }
-                        className="mt-0.5 h-4 w-4 rounded border-stone-300 text-emerald-600 accent-emerald-600"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {submitting ? 'Creando cuenta...' : 'Crear Cuenta y Otorgar Permisos'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Edit Staff & Key Modal */}
-      {editingStaff && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Editar personal, clave y permisos"
-        >
-          <form
-            onSubmit={handleEditSubmit}
-            className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-xl"
-          >
-            <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
-              <div>
-                <h3 className="font-display text-base font-semibold text-emerald-950">
-                  Editar cuenta de {editingStaff.fullName}
-                </h3>
-                <p className="font-mono text-[11px] text-stone-600">
-                  Usuario de ingreso: {editingStaff.username}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingStaff(null)}
-                className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
-              {formError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
-                  {formError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-stone-700">Nombre</label>
-                  <input
-                    type="text"
-                    required
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-stone-700">Estado de acceso</label>
-                  <select
-                    value={editActive ? 'active' : 'inactive'}
-                    onChange={(e) => setEditActive(e.target.value === 'active')}
-                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                  >
-                    <option value="active">Activo (puede ingresar)</option>
-                    <option value="inactive">Suspendido (bloqueado)</option>
-                  </select>
-                </div>
-              </div>
-
-              {isSuperAdmin && editingStaff.role !== 'super_admin' && (
-                <div>
-                  <label className="block font-medium text-stone-700">Rol</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as 'manager' | 'cashier')}
-                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                  >
-                    <option value="manager">Gerente</option>
-                    <option value="cashier">Personal de Caja</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Password View & Edit Section */}
-              <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 font-semibold text-emerald-950">
-                    <KeyRound className="h-3.5 w-3.5 text-orange-600" />
-                    <span>Clave de acceso</span>
-                  </div>
-                  {staffKeys[editingStaff.uid] && (
-                    <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2 py-0.5">
-                      <span className="text-[11px] text-stone-500">Actual:</span>
-                      <span className="font-mono text-xs font-semibold text-emerald-950">
-                        {staffKeys[editingStaff.uid]}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('edit-current', staffKeys[editingStaff.uid])}
-                        title="Copiar clave actual"
-                        className="rounded p-0.5 text-stone-400 hover:text-emerald-900"
-                      >
-                        {copiedId === 'edit-current' ? (
-                          <Check className="h-3 w-3 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {!staffKeys[editingStaff.uid] && (
-                  <div>
-                    <label className="block font-medium text-stone-700">
-                      Clave actual (solo si vas a cambiarla)
-                    </label>
-                    <input
-                      type="password"
-                      value={editCurrentPwd}
-                      onChange={(e) => setEditCurrentPwd(e.target.value)}
-                      placeholder="Ingresá la clave actual asignada anteriormente"
-                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                    />
-                    <p className="mt-1 text-[11px] text-stone-500">
-                      Esta cuenta se creó antes de guardar claves visibles. Una vez que definas la
-                      nueva clave aquí, quedará visible y editable siempre. Si la olvidaste,
-                      eliminá el perfil y crealo de nuevo.
-                    </p>
+                        Abrir Firebase Authentication Providers
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
                 )}
 
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="block font-medium text-stone-700">
-                      Nueva clave de acceso (opcional, mín. 6)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditNewPwd(generateAccessKey());
-                        setShowEditPwd(true);
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Generar nueva clave
-                    </button>
-                  </div>
-                  <div className="relative mt-1 flex items-center">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="block font-medium text-stone-700">Nombre y apellido</label>
                     <input
-                      type={showEditPwd ? 'text' : 'password'}
-                      value={editNewPwd}
-                      onChange={(e) => setEditNewPwd(e.target.value)}
-                      placeholder="Dejá vacío para mantener la clave actual"
-                      className="w-full rounded-lg border border-stone-300 bg-white py-2 pl-3 pr-16 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Ej: José González"
+                      className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
                     />
-                    <div className="absolute right-1.5 flex items-center gap-0.5">
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-700">
+                      Usuario de acceso
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Ej: jose o deposito01"
+                      className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                    />
+                    {cleanUsernameInput && (
+                      <p className="mt-1 text-[11px] text-emerald-800">
+                        Ingresará en «Gerente / Personal» con el usuario:{' '}
+                        <span className="font-mono font-semibold">{cleanUsernameInput}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="block font-medium text-stone-700">
+                        Clave asignada (mín. 6)
+                      </label>
                       <button
                         type="button"
-                        onClick={() => setShowEditPwd((v) => !v)}
-                        title={showEditPwd ? 'Ocultar' : 'Mostrar'}
-                        className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                        onClick={() => {
+                          setPassword(generateAccessKey());
+                          setShowCreatePwd(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700"
                       >
-                        {showEditPwd ? (
-                          <EyeOff className="h-3.5 w-3.5" />
-                        ) : (
-                          <Eye className="h-3.5 w-3.5" />
-                        )}
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Generar clave
                       </button>
-                      {editNewPwd.trim() && (
+                    </div>
+                    <div className="relative mt-1 flex items-center">
+                      <input
+                        type={showCreatePwd ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full rounded-lg border border-stone-300 py-2 pl-3 pr-16 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      />
+                      <div className="absolute right-1.5 flex items-center gap-0.5">
                         <button
                           type="button"
-                          onClick={() => handleCopy('edit-new', editNewPwd)}
-                          title="Copiar nueva clave"
+                          onClick={() => setShowCreatePwd((v) => !v)}
+                          title={showCreatePwd ? 'Ocultar' : 'Mostrar'}
                           className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
                         >
-                          {copiedId === 'edit-new' ? (
+                          {showCreatePwd ? (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy('create-pwd', password)}
+                          title="Copiar clave"
+                          className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                        >
+                          {copiedId === 'create-pwd' ? (
                             <Check className="h-3.5 w-3.5 text-emerald-600" />
                           ) : (
                             <Copy className="h-3.5 w-3.5" />
                           )}
                         </button>
-                      )}
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block font-medium text-stone-700">
+                      Perfil / Rol base del empleado
+                    </label>
+                    <div
+                      className={`mt-1.5 grid gap-2 ${
+                        isSuperAdmin ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'
+                      }`}
+                    >
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleRoleChangeOnCreate('manager')}
+                          className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+                            newRole === 'manager'
+                              ? 'border-orange-500 bg-orange-500 text-white'
+                              : 'border-amber-200 bg-white text-stone-700 hover:bg-amber-50'
+                          }`}
+                        >
+                          <div className="text-sm font-semibold">Gerente</div>
+                          <div className="text-xs opacity-90">Stock, caja y personal</div>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRoleChangeOnCreate('cashier')}
+                        className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+                          newRole === 'cashier'
+                            ? 'border-emerald-700 bg-emerald-700 text-white'
+                            : 'border-amber-200 bg-white text-stone-700 hover:bg-amber-50'
+                        }`}
+                      >
+                        <div className="text-sm font-semibold">Personal de Caja</div>
+                        <div className="text-xs opacity-90">Ventas en caja y cobro</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRoleChangeOnCreate('warehouse')}
+                        className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+                          newRole === 'warehouse'
+                            ? 'border-amber-500 bg-amber-500 text-white'
+                            : 'border-amber-200 bg-white text-stone-700 hover:bg-amber-50'
+                        }`}
+                      >
+                        <div className="text-sm font-semibold">Depositero / Stock</div>
+                        <div className="text-xs opacity-90">Cargar mercadería y stock</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-stone-700">
+                      Nombre del puesto o cargo (podés escribir ej: Depositero, Repositor, Cajero)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={60}
+                      value={newJobTitle}
+                      onChange={(e) => setNewJobTitle(e.target.value)}
+                      placeholder="Ej: Depositero, Repositor, Encargado de Depósito..."
+                      className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-medium text-stone-700">Permisos del usuario</p>
+                  <div className="mt-2 divide-y divide-amber-100 rounded-xl border border-amber-200">
+                    {PERMISSION_LABELS.filter(
+                      (perm) => !perm.managerOrAdmin || (isSuperAdmin && newRole === 'manager')
+                    ).map((perm) => (
+                      <label
+                        key={perm.key}
+                        className="flex cursor-pointer items-start justify-between gap-3 px-3.5 py-2.5 hover:bg-amber-50/50"
+                      >
+                        <div>
+                          <p className="font-medium text-emerald-950">{perm.label}</p>
+                          <p className="text-[11px] text-stone-500">{perm.description}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={newPermissions[perm.key]}
+                          onChange={(e) =>
+                            setNewPermissions({
+                              ...newPermissions,
+                              [perm.key]: e.target.checked,
+                            })
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-stone-300 text-emerald-600 accent-emerald-600"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div>
-                <p className="font-medium text-stone-700">Permisos habilitados</p>
-                <div className="mt-2 divide-y divide-amber-100 rounded-xl border border-amber-200">
-                  {PERMISSION_LABELS.filter(
-                    (perm) => !perm.managerOrAdmin || (isSuperAdmin && editRole === 'manager')
-                  ).map((perm) => (
-                    <label
-                      key={perm.key}
-                      className="flex cursor-pointer items-start justify-between gap-3 px-3.5 py-2.5 hover:bg-amber-50/50"
+              <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(false)}
+                  className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {submitting ? 'Creando cuenta...' : 'Crear Cuenta y Otorgar Permisos'}
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body
+        )}
+
+      {/* Edit Staff & Key Modal via Portal */}
+      {editingStaff &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Editar personal, clave y permisos"
+          >
+            <form
+              onSubmit={handleEditSubmit}
+              className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
+                <div>
+                  <h3 className="font-display text-base font-semibold text-emerald-950">
+                    Editar cuenta de {editingStaff.fullName}
+                  </h3>
+                  <p className="font-mono text-[11px] text-stone-600">
+                    Usuario de ingreso: {editingStaff.username}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingStaff(null)}
+                  className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                {formError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
+                    {formError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block font-medium text-stone-700">Nombre</label>
+                    <input
+                      type="text"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-stone-700">Estado de acceso</label>
+                    <select
+                      value={editActive ? 'active' : 'inactive'}
+                      onChange={(e) => setEditActive(e.target.value === 'active')}
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                     >
-                      <div>
-                        <p className="font-medium text-emerald-950">{perm.label}</p>
-                        <p className="text-[11px] text-stone-500">{perm.description}</p>
-                      </div>
+                      <option value="active">Activo (puede ingresar)</option>
+                      <option value="inactive">Suspendido (bloqueado)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {editingStaff.role !== 'super_admin' && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block font-medium text-stone-700">Perfil / Rol base</label>
+                      <select
+                        value={editRole}
+                        onChange={(e) => {
+                          const nextRole = e.target.value as 'manager' | 'cashier' | 'warehouse';
+                          setEditRole(nextRole);
+                          const defaults = ['Gerente', 'Personal de Caja', 'Depositero', ''];
+                          if (defaults.includes(editJobTitle.trim())) {
+                            setEditJobTitle(defaultJobTitleForRole(nextRole));
+                          }
+                        }}
+                        className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      >
+                        {isSuperAdmin && <option value="manager">Gerente</option>}
+                        <option value="cashier">Personal de Caja</option>
+                        <option value="warehouse">Depositero / Stock</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-medium text-stone-700">
+                        Puesto / Cargo (ej: Depositero)
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={editPermissions[perm.key]}
-                        onChange={(e) =>
-                          setEditPermissions({
-                            ...editPermissions,
-                            [perm.key]: e.target.checked,
-                          })
-                        }
-                        className="mt-0.5 h-4 w-4 rounded border-stone-300 text-emerald-600 accent-emerald-600"
+                        type="text"
+                        maxLength={60}
+                        value={editJobTitle}
+                        onChange={(e) => setEditJobTitle(e.target.value)}
+                        placeholder="Ej: Depositero, Cajero, Repositor"
+                        className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                       />
-                    </label>
-                  ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Password View & Edit Section */}
+                <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-semibold text-emerald-950">
+                      <KeyRound className="h-3.5 w-3.5 text-orange-600" />
+                      <span>Clave de acceso</span>
+                    </div>
+                    {staffKeys[editingStaff.uid] && (
+                      <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2 py-0.5">
+                        <span className="text-[11px] text-stone-500">Actual:</span>
+                        <span className="font-mono text-xs font-semibold text-emerald-950">
+                          {staffKeys[editingStaff.uid]}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy('edit-current', staffKeys[editingStaff.uid])}
+                          title="Copiar clave actual"
+                          className="rounded p-0.5 text-stone-400 hover:text-emerald-900"
+                        >
+                          {copiedId === 'edit-current' ? (
+                            <Check className="h-3 w-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {!staffKeys[editingStaff.uid] && (
+                    <div>
+                      <label className="block font-medium text-stone-700">
+                        Clave actual (solo si vas a cambiarla)
+                      </label>
+                      <input
+                        type="password"
+                        value={editCurrentPwd}
+                        onChange={(e) => setEditCurrentPwd(e.target.value)}
+                        placeholder="Ingresá la clave actual asignada anteriormente"
+                        className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-stone-500">
+                        Esta cuenta se creó antes de guardar claves visibles. Una vez que definas la
+                        nueva clave aquí, quedará visible y editable siempre. Si la olvidaste,
+                        eliminá el perfil y crealo de nuevo.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="block font-medium text-stone-700">
+                        Nueva clave de acceso (opcional, mín. 6)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditNewPwd(generateAccessKey());
+                          setShowEditPwd(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Generar nueva clave
+                      </button>
+                    </div>
+                    <div className="relative mt-1 flex items-center">
+                      <input
+                        type={showEditPwd ? 'text' : 'password'}
+                        value={editNewPwd}
+                        onChange={(e) => setEditNewPwd(e.target.value)}
+                        placeholder="Dejá vacío para mantener la clave actual"
+                        className="w-full rounded-lg border border-stone-300 bg-white py-2 pl-3 pr-16 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                      />
+                      <div className="absolute right-1.5 flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowEditPwd((v) => !v)}
+                          title={showEditPwd ? 'Ocultar' : 'Mostrar'}
+                          className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                        >
+                          {showEditPwd ? (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        {editNewPwd.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy('edit-new', editNewPwd)}
+                            title="Copiar nueva clave"
+                            className="rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                          >
+                            {copiedId === 'edit-new' ? (
+                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-medium text-stone-700">Permisos habilitados</p>
+                  <div className="mt-2 divide-y divide-amber-100 rounded-xl border border-amber-200">
+                    {PERMISSION_LABELS.filter(
+                      (perm) => !perm.managerOrAdmin || (isSuperAdmin && editRole === 'manager')
+                    ).map((perm) => (
+                      <label
+                        key={perm.key}
+                        className="flex cursor-pointer items-start justify-between gap-3 px-3.5 py-2.5 hover:bg-amber-50/50"
+                      >
+                        <div>
+                          <p className="font-medium text-emerald-950">{perm.label}</p>
+                          <p className="text-[11px] text-stone-500">{perm.description}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={editPermissions[perm.key]}
+                          onChange={(e) =>
+                            setEditPermissions({
+                              ...editPermissions,
+                              [perm.key]: e.target.checked,
+                            })
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-stone-300 text-emerald-600 accent-emerald-600"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
-              <button
-                type="button"
-                onClick={() => setEditingStaff(null)}
-                className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {submitting ? 'Guardando...' : 'Guardar Cambios'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+              <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingStaff(null)}
+                  className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {submitting ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
