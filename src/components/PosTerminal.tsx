@@ -400,22 +400,35 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           {filteredProducts.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-white p-10 text-center">
-              <p className="font-display text-sm font-semibold text-emerald-950">
-                No se encontraron productos
-              </p>
-              <p className="mt-1 text-xs text-stone-500">
-                Probá otro término, limpiá el filtro de categoría o escaneá otro código.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedCategory('Todos');
-                }}
-                className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-amber-100"
-              >
-                Ver todo el catálogo
-              </button>
+              {products.length === 0 ? (
+                <>
+                  <p className="font-display text-sm font-semibold text-emerald-950">
+                    Aún no hay productos cargados en este local
+                  </p>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Cargá artículos desde la pestaña Inventario para habilitar el cobro rápido.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-display text-sm font-semibold text-emerald-950">
+                    No se encontraron productos
+                  </p>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Probá otro término, limpiá el filtro de categoría o escaneá otro código.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedCategory('Todos');
+                    }}
+                    className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-amber-100"
+                  >
+                    Ver todo el catálogo
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 pb-2 sm:grid-cols-3 xl:grid-cols-4">

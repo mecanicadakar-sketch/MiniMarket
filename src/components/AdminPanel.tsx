@@ -17,7 +17,11 @@ import {
   X,
 } from 'lucide-react';
 import { StaffPermissions, StaffProfile, StaffRole } from '../types/pos';
-import { isInternalStaffEmail, sanitizeStaffUsername } from '../firebase';
+import {
+  isInternalStaffEmail,
+  normalizeStaffEmail,
+  sanitizeStaffUsername,
+} from '../firebase';
 
 interface AdminPanelProps {
   currentUser: StaffProfile;
@@ -29,6 +33,7 @@ interface AdminPanelProps {
     password: string;
     role: 'manager' | 'cashier' | 'warehouse';
     jobTitle?: string;
+    assignedManagerUid?: string;
     permissions: StaffPermissions;
   }) => Promise<void>;
   onUpdateStaff: (
@@ -39,6 +44,7 @@ interface AdminPanelProps {
       permissions: StaffPermissions;
       role: StaffRole;
       jobTitle?: string;
+      assignedManagerUid?: string;
       currentPassword?: string;
       newPassword?: string;
     }
@@ -190,6 +196,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newJobTitle, setNewJobTitle] = useState(
     isSuperAdmin ? 'Gerente' : 'Personal de Caja'
   );
+  const [newAssignedManagerUid, setNewAssignedManagerUid] = useState('');
   const [newPermissions, setNewPermissions] = useState<StaffPermissions>(
     isSuperAdmin ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_CASHIER_PERMS }
   );
@@ -199,27 +206,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editActive, setEditActive] = useState(true);
   const [editRole, setEditRole] = useState<StaffRole>('cashier');
   const [editJobTitle, setEditJobTitle] = useState('');
+  const [editAssignedManagerUid, setEditAssignedManagerUid] = useState('');
   const [editCurrentPwd, setEditCurrentPwd] = useState('');
+  const [showEditCurrentPwd, setShowEditCurrentPwd] = useState(false);
   const [editNewPwd, setEditNewPwd] = useState('');
   const [showEditPwd, setShowEditPwd] = useState(true);
   const [editPermissions, setEditPermissions] = useState<StaffPermissions>({
     ...DEFAULT_CASHIER_PERMS,
   });
 
+  const managersList = useMemo(
+    () => staffList.filter((s) => s.role === 'manager'),
+    [staffList]
+  );
+
   const visibleStaff = useMemo(() => {
     if (isSuperAdmin) return staffList;
     return staffList.filter(
-      (s) => s.role === 'cashier' || s.role === 'warehouse' || s.uid === currentUser.uid
+      (s) =>
+        s.uid === currentUser.uid ||
+        ((s.role === 'cashier' || s.role === 'warehouse') &&
+          s.assignedManagerUid === currentUser.uid)
     );
   }, [staffList, isSuperAdmin, currentUser.uid]);
 
   const counts = useMemo(() => {
-    const managers = staffList.filter((s) => s.role === 'manager' && s.active).length;
-    const cashiers = staffList.filter((s) => s.role === 'cashier' && s.active).length;
-    const warehouse = staffList.filter((s) => s.role === 'warehouse' && s.active).length;
-    const inactive = staffList.filter((s) => !s.active).length;
+    const managers = visibleStaff.filter((s) => s.role === 'manager' && s.active).length;
+    const cashiers = visibleStaff.filter((s) => s.role === 'cashier' && s.active).length;
+    const warehouse = visibleStaff.filter((s) => s.role === 'warehouse' && s.active).length;
+    const inactive = visibleStaff.filter((s) => !s.active).length;
     return { managers, cashiers, warehouse, inactive, total: visibleStaff.length };
-  }, [staffList, visibleStaff.length]);
+  }, [visibleStaff]);
 
   const handleCopy = async (id: string, value: string) => {
     if (!value) return;
@@ -236,6 +253,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const defaultRole: 'manager' | 'cashier' | 'warehouse' = isSuperAdmin ? 'manager' : 'cashier';
     setNewRole(defaultRole);
     setNewJobTitle(defaultJobTitleForRole(defaultRole));
+    setNewAssignedManagerUid(isSuperAdmin ? managersList[0]?.uid || '' : currentUser.uid);
     setNewPermissions(
       defaultRole === 'manager' ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_CASHIER_PERMS }
     );
@@ -269,7 +287,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditActive(staff.active);
     setEditRole(staff.role);
     setEditJobTitle(staff.jobTitle || defaultJobTitleForRole(staff.role));
+    setEditAssignedManagerUid(staff.assignedManagerUid || '');
     setEditCurrentPwd('');
+    setShowEditCurrentPwd(false);
     setEditNewPwd('');
     setShowEditPwd(true);
     setEditPermissions({ ...staff.permissions });
@@ -283,7 +303,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     const cleanUser = sanitizeStaffUsername(username);
     if (cleanUser.length < 2) {
-      setFormError('Ingresá un usuario válido de al menos 2 caracteres (letras, números, punto o guion).');
+      setFormError('Ingresá un usuario o email válido de al menos 2 caracteres.');
+      return;
+    }
+
+    if (cleanUser.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanUser)) {
+      setFormError('El formato del email ingresado no es válido.');
       return;
     }
 
@@ -312,6 +337,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         password,
         role: sanitizedRole,
         jobTitle: newJobTitle.trim() || defaultJobTitleForRole(sanitizedRole),
+        assignedManagerUid:
+          sanitizedRole === 'cashier' || sanitizedRole === 'warehouse'
+            ? isSuperAdmin
+              ? newAssignedManagerUid || undefined
+              : currentUser.uid
+            : undefined,
         permissions: sanitizedPerms,
       });
       setCreateOpen(false);
@@ -324,7 +355,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           'Debés habilitar el proveedor "Correo electrónico/contraseña" en Firebase Console para crear cuentas con usuario y contraseña.'
         );
       } else if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
-        setFormError('Ese usuario ya existe en el sistema. Elegí otro identificador.');
+        setFormError('Ese usuario o email ya existe en Firebase. Elegí otro identificador.');
+      } else if (code === 'auth/invalid-email' || msg.includes('invalid-email')) {
+        setFormError('El formato del usuario o email no es válido para Firebase.');
       } else {
         setFormError('No se pudo crear la cuenta. Verificá los datos e intentá nuevamente.');
       }
@@ -376,6 +409,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         active: editActive,
         role: safeRole,
         jobTitle: editJobTitle.trim() || defaultJobTitleForRole(safeRole),
+        assignedManagerUid:
+          safeRole === 'cashier' || safeRole === 'warehouse'
+            ? isSuperAdmin
+              ? editAssignedManagerUid || undefined
+              : editingStaff.assignedManagerUid
+            : undefined,
         permissions: sanitizedPerms,
         currentPassword: editCurrentPwd.trim() || undefined,
         newPassword: trimmedNewPwd || undefined,
@@ -415,6 +454,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const cleanUsernameInput = sanitizeStaffUsername(username);
+  const generatedFirebaseEmail = cleanUsernameInput ? normalizeStaffEmail(cleanUsernameInput) : '';
 
   return (
     <div className="space-y-5">
@@ -433,11 +473,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
-          <p className="text-xs text-stone-500">Gerentes activos</p>
-          <p className="mt-1 font-mono text-2xl font-bold text-orange-600 tabular-nums">
-            {counts.managers}
+          <p className="text-xs text-stone-500">
+            {isSuperAdmin ? 'Gerentes activos' : 'Tu local / gerencia'}
           </p>
-          <p className="mt-0.5 text-xs text-stone-500">Gestionan stock y personal</p>
+          <p className="mt-1 font-mono text-2xl font-bold text-orange-600 tabular-nums">
+            {isSuperAdmin ? counts.managers : 'Activo'}
+          </p>
+          <p className="mt-0.5 text-xs text-stone-500">
+            {isSuperAdmin ? 'Locales independientes' : 'Personal propio e independiente'}
+          </p>
         </div>
 
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
@@ -499,12 +543,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-amber-100/70">
+              {visibleStaff.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-xs text-stone-500">
+                    Todavía no tenés personal cargado para tu local. Usá{' '}
+                    <strong className="text-emerald-950">Alta de Personal</strong> para crear cuentas
+                    exclusivas de tu sucursal.
+                  </td>
+                </tr>
+              )}
               {visibleStaff.map((staff) => {
                 const canManageThisUser =
                   staff.role !== 'super_admin' &&
                   (isSuperAdmin ||
                     (currentUser.permissions.manageCashiers &&
-                      (staff.role === 'cashier' || staff.role === 'warehouse')));
+                      (staff.role === 'cashier' || staff.role === 'warehouse') &&
+                      staff.assignedManagerUid === currentUser.uid));
 
                 const activePermsList = PERMISSION_LABELS.filter(
                   (p) => staff.permissions[p.key]
@@ -512,10 +566,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 const storedKey = staffKeys[staff.uid];
                 const isKeyRevealed = Boolean(revealedKeys[staff.uid]);
-                const showRealEmail =
-                  staff.email && !isInternalStaffEmail(staff.email) && staff.role === 'super_admin';
                 const displayJobTitle = staff.jobTitle?.trim() || roleDisplayName(staff.role);
                 const baseRoleLabel = roleDisplayName(staff.role);
+                const assignedManager = staff.assignedManagerUid
+                  ? managersList.find((m) => m.uid === staff.assignedManagerUid)
+                  : undefined;
 
                 return (
                   <tr key={staff.uid} className="hover:bg-amber-50/40">
@@ -523,8 +578,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="font-semibold text-emerald-950">{staff.fullName}</div>
                       <div className="font-mono text-[11px] text-stone-500">
                         Usuario: {staff.username}
-                        {showRealEmail ? ` · ${staff.email}` : ''}
                       </div>
+                      {staff.email && (
+                        <div className="mt-0.5 flex items-center gap-1 font-mono text-[11px] text-emerald-800">
+                          <span>Email Firebase: {staff.email}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(`email-${staff.uid}`, staff.email)}
+                            title="Copiar email de acceso"
+                            className="rounded p-0.5 text-stone-400 hover:bg-amber-100 hover:text-emerald-950"
+                          >
+                            {copiedId === `email-${staff.uid}` ? (
+                              <Check className="h-3 w-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </td>
 
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -532,6 +603,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       {displayJobTitle.toLowerCase() !== baseRoleLabel.toLowerCase() && (
                         <div className="text-[11px] text-stone-500">{baseRoleLabel}</div>
                       )}
+                      {isSuperAdmin &&
+                        (staff.role === 'cashier' || staff.role === 'warehouse') && (
+                          <div className="mt-0.5 text-[11px] font-medium text-orange-700">
+                            {assignedManager
+                              ? `Local de ${assignedManager.fullName}`
+                              : 'Sin gerente asignado'}
+                          </div>
+                        )}
                     </td>
 
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -714,21 +793,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                   <div>
                     <label className="block font-medium text-stone-700">
-                      Usuario de acceso
+                      Usuario o Email de acceso
                     </label>
                     <input
                       type="text"
                       required
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Ej: jose o deposito01"
+                      placeholder="Ej: mabel o mabel@tienda.com"
                       className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                     />
                     {cleanUsernameInput && (
-                      <p className="mt-1 text-[11px] text-emerald-800">
-                        Ingresará en «Gerente / Personal» con el usuario:{' '}
-                        <span className="font-mono font-semibold">{cleanUsernameInput}</span>
-                      </p>
+                      <div className="mt-1 space-y-0.5 text-[11px] text-emerald-800">
+                        <p>
+                          Ingreso en «Gerente / Personal»:{' '}
+                          <span className="font-mono font-semibold">{cleanUsernameInput}</span>
+                        </p>
+                        <p className="text-stone-600">
+                          Email Firebase asignado:{' '}
+                          <span className="font-mono font-semibold text-emerald-900">
+                            {generatedFirebaseEmail}
+                          </span>
+                        </p>
+                      </div>
                     )}
                   </div>
 
@@ -853,6 +940,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
                     />
                   </div>
+
+                  {isSuperAdmin &&
+                    (newRole === 'cashier' || newRole === 'warehouse') &&
+                    managersList.length > 0 && (
+                      <div>
+                        <label className="block font-medium text-stone-700">
+                          Gerente / Local asignado
+                        </label>
+                        <select
+                          value={newAssignedManagerUid}
+                          onChange={(e) => setNewAssignedManagerUid(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        >
+                          <option value="">Sin gerente asignado (solo Administrador)</option>
+                          {managersList.map((mgr) => (
+                            <option key={mgr.uid} value={mgr.uid}>
+                              Local de {mgr.fullName} ({mgr.username})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                 </div>
 
                 <div>
@@ -927,7 +1036,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     Editar cuenta de {editingStaff.fullName}
                   </h3>
                   <p className="font-mono text-[11px] text-stone-600">
-                    Usuario de ingreso: {editingStaff.username}
+                    Usuario: {editingStaff.username}
+                    {editingStaff.email ? ` · Email Firebase: ${editingStaff.email}` : ''}
                   </p>
                 </div>
                 <button
@@ -971,39 +1081,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 {editingStaff.role !== 'super_admin' && (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block font-medium text-stone-700">Perfil / Rol base</label>
-                      <select
-                        value={editRole}
-                        onChange={(e) => {
-                          const nextRole = e.target.value as 'manager' | 'cashier' | 'warehouse';
-                          setEditRole(nextRole);
-                          const defaults = ['Gerente', 'Personal de Caja', 'Depositero', ''];
-                          if (defaults.includes(editJobTitle.trim())) {
-                            setEditJobTitle(defaultJobTitleForRole(nextRole));
-                          }
-                        }}
-                        className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                      >
-                        {isSuperAdmin && <option value="manager">Gerente</option>}
-                        <option value="cashier">Personal de Caja</option>
-                        <option value="warehouse">Depositero / Stock</option>
-                      </select>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block font-medium text-stone-700">Perfil / Rol base</label>
+                        <select
+                          value={editRole}
+                          onChange={(e) => {
+                            const nextRole = e.target.value as 'manager' | 'cashier' | 'warehouse';
+                            setEditRole(nextRole);
+                            const defaults = ['Gerente', 'Personal de Caja', 'Depositero', ''];
+                            if (defaults.includes(editJobTitle.trim())) {
+                              setEditJobTitle(defaultJobTitleForRole(nextRole));
+                            }
+                          }}
+                          className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        >
+                          {isSuperAdmin && <option value="manager">Gerente</option>}
+                          <option value="cashier">Personal de Caja</option>
+                          <option value="warehouse">Depositero / Stock</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-medium text-stone-700">
+                          Puesto / Cargo (ej: Depositero)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={60}
+                          value={editJobTitle}
+                          onChange={(e) => setEditJobTitle(e.target.value)}
+                          placeholder="Ej: Depositero, Cajero, Repositor"
+                          className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block font-medium text-stone-700">
-                        Puesto / Cargo (ej: Depositero)
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={60}
-                        value={editJobTitle}
-                        onChange={(e) => setEditJobTitle(e.target.value)}
-                        placeholder="Ej: Depositero, Cajero, Repositor"
-                        className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                      />
-                    </div>
+
+                    {isSuperAdmin &&
+                      (editRole === 'cashier' || editRole === 'warehouse') &&
+                      managersList.length > 0 && (
+                        <div>
+                          <label className="block font-medium text-stone-700">
+                            Gerente / Local asignado
+                          </label>
+                          <select
+                            value={editAssignedManagerUid}
+                            onChange={(e) => setEditAssignedManagerUid(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                          >
+                            <option value="">Sin gerente asignado (solo Administrador)</option>
+                            {managersList.map((mgr) => (
+                              <option key={mgr.uid} value={mgr.uid}>
+                                Local de {mgr.fullName} ({mgr.username})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                   </div>
                 )}
 
@@ -1041,13 +1175,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <label className="block font-medium text-stone-700">
                         Clave actual (solo si vas a cambiarla)
                       </label>
-                      <input
-                        type="password"
-                        value={editCurrentPwd}
-                        onChange={(e) => setEditCurrentPwd(e.target.value)}
-                        placeholder="Ingresá la clave actual asignada anteriormente"
-                        className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                      />
+                      <div className="relative mt-1 flex items-center">
+                        <input
+                          type={showEditCurrentPwd ? 'text' : 'password'}
+                          value={editCurrentPwd}
+                          onChange={(e) => setEditCurrentPwd(e.target.value)}
+                          placeholder="Ingresá la clave actual asignada anteriormente"
+                          className="w-full rounded-lg border border-stone-300 bg-white py-2 pl-3 pr-10 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEditCurrentPwd((v) => !v)}
+                          title={showEditCurrentPwd ? 'Ocultar' : 'Mostrar'}
+                          className="absolute right-2 rounded p-1 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                        >
+                          {showEditCurrentPwd ? (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
                       <p className="mt-1 text-[11px] text-stone-500">
                         Esta cuenta se creó antes de guardar claves visibles. Una vez que definas la
                         nueva clave aquí, quedará visible y editable siempre. Si la olvidaste,

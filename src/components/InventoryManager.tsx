@@ -144,7 +144,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setAddingInlineCategory(false);
     setInlineCategoryName('');
     setEditingProduct({
-      id: `p-${Date.now()}`,
+      id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       barcode: generateEan13(),
       sku: `ART-${String(products.length + 1).padStart(3, '0')}`,
       name: '',
@@ -443,19 +443,42 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <div className="overflow-hidden rounded-xl border border-amber-200/80 bg-white">
           {filteredProducts.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-sm font-medium text-emerald-950">
-                No hay productos que coincidan con este filtro
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch('');
-                  setFilter('all');
-                }}
-                className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-amber-100"
-              >
-                Restablecer filtros
-              </button>
+              {products.length === 0 ? (
+                <>
+                  <p className="text-sm font-semibold text-emerald-950">
+                    Tu inventario está vacío
+                  </p>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Este local administra su propio catálogo de forma independiente. Cargá tu primer producto para empezar.
+                  </p>
+                  {canManageInventory && (
+                    <button
+                      type="button"
+                      onClick={openNewModal}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar primer producto
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-emerald-950">
+                    No hay productos que coincidan con este filtro
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setFilter('all');
+                    }}
+                    className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-amber-100"
+                  >
+                    Restablecer filtros
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">

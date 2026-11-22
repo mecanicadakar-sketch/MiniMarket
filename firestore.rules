@@ -55,6 +55,61 @@ service cloud.firestore {
       return isSuperAdmin() || isActiveStaff();
     }
 
+    function hasAssignedManager(data) {
+      return 'assignedManagerUid' in data
+        && data.assignedManagerUid is string
+        && data.assignedManagerUid.size() >= 1;
+    }
+
+    function userStoreId() {
+      return isSuperAdmin()
+        ? 'minimarket-principal'
+        : (staffData().role == 'manager'
+            ? ('mgr-' + request.auth.uid)
+            : (hasAssignedManager(staffData())
+                ? ('mgr-' + staffData().assignedManagerUid)
+                : 'minimarket-principal'));
+    }
+
+    function isValidStoreId(storeId) {
+      return storeId is string
+        && storeId.size() >= 1
+        && storeId.size() <= 64
+        && storeId.matches('^[a-zA-Z0-9_\\-]+$')
+        && (storeId == 'minimarket-principal' || storeId.matches('^mgr-[a-zA-Z0-9_\\-]+$'));
+    }
+
+    function canAccessStore(storeId) {
+      return isAuthorizedStaffOrAdmin() && isValidStoreId(storeId) && storeId == userStoreId();
+    }
+
+    function isStoreSettingId(settingId, storeId) {
+      return (storeId == 'minimarket-principal' && settingId == 'store')
+        || settingId == (storeId + '__store');
+    }
+
+    function isCategoriesSettingId(settingId, storeId) {
+      return (storeId == 'minimarket-principal' && settingId == 'categories')
+        || settingId == (storeId + '__categories');
+    }
+
+    function isTicketSeqSettingId(settingId, storeId) {
+      return (storeId == 'minimarket-principal' && settingId == 'ticketSeq')
+        || settingId == (storeId + '__ticketSeq');
+    }
+
+    function isHardwareSettingId(settingId, storeId) {
+      return (storeId == 'minimarket-principal' && settingId == 'hardware')
+        || settingId == (storeId + '__hardware');
+    }
+
+    function isAllowedSettingIdForStore(settingId, storeId) {
+      return isStoreSettingId(settingId, storeId)
+        || isCategoriesSettingId(settingId, storeId)
+        || isTicketSeqSettingId(settingId, storeId)
+        || isHardwareSettingId(settingId, storeId);
+    }
+
     function isValidPermissionsMap(perms, role) {
       return perms is map
         && perms.keys().hasAll([
@@ -133,7 +188,7 @@ service cloud.firestore {
         && isValidPermissionsMap(data.permissions, data.role)
         && data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128
         && data.createdByRole in ['super_admin', 'manager']
-        && (!('assignedManagerUid' in data) || (data.assignedManagerUid is string && data.assignedManagerUid.size() <= 128))
+        && (!('assignedManagerUid' in data) || (data.role in ['cashier', 'warehouse'] && data.assignedManagerUid is string && data.assignedManagerUid.size() <= 128))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -188,7 +243,7 @@ service cloud.firestore {
           'updatedAt'
         ])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64
         && data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 40
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
@@ -238,7 +293,7 @@ service cloud.firestore {
           'updatedAt'
         ])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && data.registerName is string && data.registerName.size() >= 1 && data.registerName.size() <= 60
         && data.cashier is string && data.cashier.size() >= 1 && data.cashier.size() <= 120
         && data.openedByUid is string && data.openedByUid.size() >= 1 && data.openedByUid.size() <= 128
@@ -296,7 +351,7 @@ service cloud.firestore {
           'updatedAt'
         ])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && data.ticketNumber is string && data.ticketNumber.size() >= 1 && data.ticketNumber.size() <= 40
         && isValidId(data.shiftId)
         && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
@@ -342,7 +397,7 @@ service cloud.firestore {
           'createdAt'
         ])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && isValidId(data.shiftId)
         && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
         && data.type in ['ingreso', 'retiro']
@@ -382,7 +437,7 @@ service cloud.firestore {
           'createdAt'
         ])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && isValidId(data.productId)
         && data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 160
         && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
@@ -448,7 +503,7 @@ service cloud.firestore {
         && data.keys().hasAll(['id', 'storeId', 'data', 'updatedByUid', 'updatedAt'])
         && data.keys().hasOnly(['id', 'storeId', 'data', 'updatedByUid', 'updatedAt'])
         && isValidId(data.id)
-        && data.storeId == 'minimarket-principal'
+        && isValidStoreId(data.storeId)
         && data.data is map
         && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
         && data.updatedAt is timestamp;
@@ -464,7 +519,11 @@ service cloud.firestore {
       allow get: if isValidId(staffId) && (
         isSuperAdmin()
         || (isSignedIn() && request.auth.uid == staffId)
-        || (isManager() && hasPermission('manageCashiers') && existing().role in ['cashier', 'warehouse'])
+        || (isManager()
+            && hasPermission('manageCashiers')
+            && existing().role in ['cashier', 'warehouse']
+            && 'assignedManagerUid' in existing()
+            && existing().assignedManagerUid == request.auth.uid)
       );
 
       allow list: if isSuperAdmin() || (
@@ -472,7 +531,7 @@ service cloud.firestore {
           resource.data.uid == request.auth.uid
           || (staffData().role == 'manager'
               && staffData().permissions.manageCashiers == true
-              && resource.data.role in ['cashier', 'warehouse'])
+              && resource.data.assignedManagerUid == request.auth.uid)
         )
       );
 
@@ -488,10 +547,12 @@ service cloud.firestore {
             (staffId == request.auth.uid && incoming().role == 'super_admin')
             || (incoming().role in ['manager', 'cashier', 'warehouse'])
           ))
-          // Manager creating cashiers or warehouse/stocker staff only
+          // Manager creating cashiers or warehouse/stocker staff strictly assigned to their own store/local
           || (isManager() && hasPermission('manageCashiers')
               && incoming().createdByRole == 'manager'
-              && incoming().role in ['cashier', 'warehouse'])
+              && incoming().role in ['cashier', 'warehouse']
+              && 'assignedManagerUid' in incoming()
+              && incoming().assignedManagerUid == request.auth.uid)
         );
 
       allow update: if isValidId(staffId)
@@ -507,13 +568,20 @@ service cloud.firestore {
             && (staffId == request.auth.uid || incoming().role in ['manager', 'cashier', 'warehouse']))
           || (isManager() && hasPermission('manageCashiers')
               && existing().role in ['cashier', 'warehouse']
+              && 'assignedManagerUid' in existing()
+              && existing().assignedManagerUid == request.auth.uid
               && incoming().role in ['cashier', 'warehouse']
-              && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'jobTitle', 'active', 'permissions', 'assignedManagerUid', 'updatedAt']))
+              && incoming().assignedManagerUid == existing().assignedManagerUid
+              && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'jobTitle', 'active', 'permissions', 'updatedAt']))
         );
 
       allow delete: if isValidId(staffId) && (
         (isSuperAdmin() && staffId != request.auth.uid)
-        || (isManager() && hasPermission('manageCashiers') && existing().role in ['cashier', 'warehouse'])
+        || (isManager()
+            && hasPermission('manageCashiers')
+            && existing().role in ['cashier', 'warehouse']
+            && 'assignedManagerUid' in existing()
+            && existing().assignedManagerUid == request.auth.uid)
       );
 
       match /credentials/{credId} {
@@ -522,7 +590,8 @@ service cloud.firestore {
           && (
             (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse']
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.assignedManagerUid == request.auth.uid)
           );
 
         allow list: if false;
@@ -535,7 +604,8 @@ service cloud.firestore {
           && (
             (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse']
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.assignedManagerUid == request.auth.uid)
           );
 
         allow delete: if isValidId(staffId) && isValidId(credId) && credId == 'access'
@@ -543,26 +613,29 @@ service cloud.firestore {
           && (
             (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier', 'warehouse'])
             || (isManager() && hasPermission('manageCashiers')
-                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse'])
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['cashier', 'warehouse']
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.assignedManagerUid == request.auth.uid)
           );
       }
     }
 
-    // --- Products & Inventory ---
+    // --- Products & Inventory (Isolated per Store / Manager) ---
     match /products/{productId} {
-      allow get: if isValidId(productId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(productId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(productId)
         && hasPermission('manageInventory')
         && isValidProduct(incoming())
         && incoming().id == productId
+        && canAccessStore(incoming().storeId)
         && incoming().updatedByUid == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
       allow update: if isValidId(productId)
         && isValidProduct(incoming())
+        && canAccessStore(existing().storeId)
         && incoming().id == existing().id
         && incoming().storeId == existing().storeId
         && incoming().createdAt == existing().createdAt
@@ -578,18 +651,21 @@ service cloud.firestore {
               && incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedByUid', 'updatedAt']))
         );
 
-      allow delete: if isValidId(productId) && hasPermission('manageInventory');
+      allow delete: if isValidId(productId)
+        && hasPermission('manageInventory')
+        && canAccessStore(existing().storeId);
     }
 
-    // --- Cash Shifts ---
+    // --- Cash Shifts (Isolated per Store / Manager) ---
     match /shifts/{shiftId} {
-      allow get: if isValidId(shiftId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(shiftId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(shiftId)
         && hasPermission('manageCash')
         && isValidShift(incoming())
         && incoming().id == shiftId
+        && canAccessStore(incoming().storeId)
         && incoming().openedByUid == request.auth.uid
         && incoming().status == 'abierto'
         && incoming().createdAt == request.time
@@ -597,6 +673,7 @@ service cloud.firestore {
 
       allow update: if isValidId(shiftId)
         && isValidShift(incoming())
+        && canAccessStore(existing().storeId)
         && incoming().id == existing().id
         && incoming().storeId == existing().storeId
         && incoming().openedByUid == existing().openedByUid
@@ -604,7 +681,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          isSuperAdmin()
+          (isSuperAdmin() && existing().storeId == 'minimarket-principal')
           || (hasPermission('manageCash')
               && existing().status == 'abierto'
               && incoming().status == 'cerrado'
@@ -613,26 +690,29 @@ service cloud.firestore {
               ]))
         );
 
-      allow delete: if isValidId(shiftId) && isSuperAdmin();
+      allow delete: if isValidId(shiftId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
     }
 
-    // --- Sales / Receipts ---
+    // --- Sales / Receipts (Isolated per Store / Manager) ---
     match /sales/{saleId} {
-      allow get: if isValidId(saleId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(saleId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(saleId)
         && hasPermission('operatePos')
         && isValidSale(incoming())
         && incoming().id == saleId
+        && canAccessStore(incoming().storeId)
         && incoming().cashierUid == request.auth.uid
         && incoming().status == 'completada'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
-        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId));
+        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId))
+        && get(/databases/$(database)/documents/shifts/$(incoming().shiftId)).data.storeId == incoming().storeId;
 
       allow update: if isValidId(saleId)
         && isValidSale(incoming())
+        && canAccessStore(existing().storeId)
         && incoming().id == existing().id
         && incoming().storeId == existing().storeId
         && incoming().cashierUid == existing().cashierUid
@@ -640,87 +720,94 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          isSuperAdmin()
+          (isSuperAdmin() && existing().storeId == 'minimarket-principal')
           || (hasPermission('voidSales')
               && existing().status == 'completada'
               && incoming().status == 'anulada'
               && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
         );
 
-      allow delete: if isValidId(saleId) && isSuperAdmin();
+      allow delete: if isValidId(saleId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
     }
 
-    // --- Cash Movements ---
+    // --- Cash Movements (Isolated per Store / Manager) ---
     match /cashMovements/{movementId} {
-      allow get: if isValidId(movementId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(movementId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(movementId)
         && hasPermission('manageCash')
         && isValidCashMovement(incoming())
         && incoming().id == movementId
+        && canAccessStore(incoming().storeId)
         && incoming().operatorUid == request.auth.uid
         && incoming().createdAt == request.time
-        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId));
+        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId))
+        && get(/databases/$(database)/documents/shifts/$(incoming().shiftId)).data.storeId == incoming().storeId;
 
       allow update: if false;
-      allow delete: if isValidId(movementId) && isSuperAdmin();
+      allow delete: if isValidId(movementId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
     }
 
-    // --- Stock Movements ---
+    // --- Stock Movements (Isolated per Store / Manager) ---
     match /stockMovements/{movementId} {
-      allow get: if isValidId(movementId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(movementId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(movementId)
         && (hasPermission('manageInventory') || hasPermission('operatePos') || hasPermission('voidSales'))
         && isValidStockMovement(incoming())
         && incoming().id == movementId
+        && canAccessStore(incoming().storeId)
         && incoming().actorUid == request.auth.uid
         && incoming().createdAt == request.time;
 
       allow update: if false;
-      allow delete: if isValidId(movementId) && isSuperAdmin();
+      allow delete: if isValidId(movementId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
     }
 
-    // --- Store & Hardware Settings ---
+    // --- Store & Hardware Settings (Isolated per Store / Manager) ---
     match /settings/{settingId} {
-      allow get: if isValidId(settingId) && isAuthorizedStaffOrAdmin();
-      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+      allow get: if isValidId(settingId) && canAccessStore(existing().storeId);
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
 
       allow create: if isValidId(settingId)
         && isValidAppSetting(incoming())
         && incoming().id == settingId
+        && canAccessStore(incoming().storeId)
+        && isAllowedSettingIdForStore(settingId, incoming().storeId)
         && incoming().updatedByUid == request.auth.uid
         && incoming().updatedAt == request.time
-        && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
-        && (settingId != 'categories' || isValidCategoriesSettingData(incoming().data))
+        && (!isStoreSettingId(settingId, incoming().storeId) || isValidStoreSettingsData(incoming().data))
+        && (!isCategoriesSettingId(settingId, incoming().storeId) || isValidCategoriesSettingData(incoming().data))
         && (
           isSuperAdmin()
           || hasPermission('manageHardware')
-          || (settingId == 'store' && isManager())
-          || (settingId == 'ticketSeq' && hasPermission('operatePos'))
-          || (settingId == 'categories' && hasPermission('manageInventory'))
+          || (isStoreSettingId(settingId, incoming().storeId) && isManager())
+          || (isTicketSeqSettingId(settingId, incoming().storeId) && hasPermission('operatePos'))
+          || (isCategoriesSettingId(settingId, incoming().storeId) && hasPermission('manageInventory'))
         );
 
       allow update: if isValidId(settingId)
         && isValidAppSetting(incoming())
+        && canAccessStore(existing().storeId)
+        && isAllowedSettingIdForStore(settingId, existing().storeId)
         && incoming().id == existing().id
         && incoming().storeId == existing().storeId
         && incoming().updatedByUid == request.auth.uid
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['data', 'updatedByUid', 'updatedAt'])
-        && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
-        && (settingId != 'categories' || isValidCategoriesSettingData(incoming().data))
+        && (!isStoreSettingId(settingId, existing().storeId) || isValidStoreSettingsData(incoming().data))
+        && (!isCategoriesSettingId(settingId, existing().storeId) || isValidCategoriesSettingData(incoming().data))
         && (
           isSuperAdmin()
           || hasPermission('manageHardware')
-          || (settingId == 'store' && isManager())
-          || (settingId == 'ticketSeq' && hasPermission('operatePos'))
-          || (settingId == 'categories' && hasPermission('manageInventory'))
+          || (isStoreSettingId(settingId, existing().storeId) && isManager())
+          || (isTicketSeqSettingId(settingId, existing().storeId) && hasPermission('operatePos'))
+          || (isCategoriesSettingId(settingId, existing().storeId) && hasPermission('manageInventory'))
         );
 
-      allow delete: if isValidId(settingId) && isSuperAdmin();
+      allow delete: if isValidId(settingId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
     }
   }
 }

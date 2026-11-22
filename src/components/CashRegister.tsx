@@ -20,6 +20,7 @@ interface CashRegisterProps {
   sales: Sale[];
   cashMovements: CashMovement[];
   store: StoreSettings;
+  defaultCashierName?: string;
   canManageCash?: boolean;
   canVoidSales?: boolean;
   onOpenShift: (payload: { registerName: string; cashier: string; openingFloat: number }) => void;
@@ -39,6 +40,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   sales,
   cashMovements,
   store,
+  defaultCashierName = 'Cajero Turno',
   canManageCash = true,
   canVoidSales = true,
   onOpenShift,
@@ -50,7 +52,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
   onViewAllSales,
 }) => {
   // Open shift form
-  const [cashierName, setCashierName] = useState('Lucía Fernández');
+  const [cashierName, setCashierName] = useState(defaultCashierName);
   const [registerName, setRegisterName] = useState('Caja 01');
   const [openingFloatStr, setOpeningFloatStr] = useState('25000');
 

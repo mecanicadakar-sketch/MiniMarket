@@ -52,6 +52,8 @@ import {
   createStaffAuthAccount,
   db,
   deleteStaffAuthAccount,
+  getStoreIdForStaff,
+  getStoreSettingDocId,
   handleFirestoreError,
   normalizeStaffEmail,
   sanitizeStaffUsername,
@@ -104,11 +106,12 @@ const SUPER_ADMIN_PERMS: StaffPermissions = {
 function serializeProductDoc(
   p: Product,
   updatedByUid: string,
-  includeCreatedAt: boolean
+  includeCreatedAt: boolean,
+  storeId: string
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     id: p.id,
-    storeId: STORE_ID,
+    storeId,
     barcode: p.barcode.slice(0, 64),
     sku: p.sku.slice(0, 40),
     name: p.name.slice(0, 160),
@@ -216,6 +219,21 @@ export default function App() {
       if (!user) {
         setFirebaseUser(null);
         setCurrentUser(null);
+        setProducts([]);
+        setShifts([]);
+        setSales([]);
+        setCashMovements([]);
+        setStockMovements([]);
+        setStaffList([]);
+        setStaffKeys({});
+        setStore(INITIAL_STORE_SETTINGS);
+        setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
+        setHardwareConfig(INITIAL_HARDWARE_CONFIG);
+        setNextTicketSeq(1);
+        setCart([]);
+        setReceiptSale(null);
+        seededRef.current = false;
+        taxMigratedRef.current = false;
         setAuthReady(true);
         return;
       }
@@ -319,7 +337,7 @@ export default function App() {
         for (const prod of INITIAL_PRODUCTS) {
           batch.set(
             doc(db, 'products', prod.id),
-            serializeProductDoc(prod, currentUser.uid, true)
+            serializeProductDoc(prod, currentUser.uid, true, STORE_ID)
           );
         }
 
@@ -382,11 +400,33 @@ export default function App() {
     })();
   }, [authReady, currentUser]);
 
-  // 4. Real-time Firestore listeners (strictly guarded by authReady && currentUser)
+  const activeStoreId = useMemo(
+    () => (currentUser ? getStoreIdForStaff(currentUser) : STORE_ID),
+    [currentUser]
+  );
+
+  // 4. Real-time Firestore listeners (strictly guarded by authReady && currentUser, isolated by activeStoreId)
   useEffect(() => {
     if (!authReady || !currentUser || !firebaseUser) return;
 
-    const storeFilter = where('storeId', '==', STORE_ID);
+    setProducts([]);
+    setShifts([]);
+    setSales([]);
+    setCashMovements([]);
+    setStockMovements([]);
+    setStore(INITIAL_STORE_SETTINGS);
+    setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
+    setHardwareConfig(INITIAL_HARDWARE_CONFIG);
+    setNextTicketSeq(currentUser.role === 'super_admin' ? 145 : 1);
+    setCart([]);
+    setReceiptSale(null);
+    taxMigratedRef.current = false;
+
+    const storeFilter = where('storeId', '==', activeStoreId);
+    const storeDocId = getStoreSettingDocId(activeStoreId, 'store');
+    const hardwareDocId = getStoreSettingDocId(activeStoreId, 'hardware');
+    const categoriesDocId = getStoreSettingDocId(activeStoreId, 'categories');
+    const ticketSeqDocId = getStoreSettingDocId(activeStoreId, 'ticketSeq');
 
     const REDUCED_5_IDS = new Set([
       'p-02',
@@ -483,7 +523,7 @@ export default function App() {
       (snap) => {
         for (const docSnap of snap.docs) {
           const val = docSnap.data() as { id: string; data: Record<string, unknown> };
-          if (val.id === 'store' && val.data) {
+          if (val.id === storeDocId && val.data) {
             const loadedStore: StoreSettings = {
               ...INITIAL_STORE_SETTINGS,
               ...(val.data as Partial<StoreSettings>),
@@ -497,9 +537,9 @@ export default function App() {
                 currentUser.role === 'manager' ||
                 currentUser.permissions.manageHardware
               ) {
-                setDoc(doc(db, 'settings', 'store'), {
-                  id: 'store',
-                  storeId: STORE_ID,
+                setDoc(doc(db, 'settings', storeDocId), {
+                  id: storeDocId,
+                  storeId: activeStoreId,
                   data: sanitizeStoreSettings(loadedStore),
                   updatedByUid: currentUser.uid,
                   updatedAt: serverTimestamp(),
@@ -507,12 +547,12 @@ export default function App() {
               }
             }
             setStore(loadedStore);
-          } else if (val.id === 'hardware' && val.data) {
+          } else if (val.id === hardwareDocId && val.data) {
             setHardwareConfig({
               ...INITIAL_HARDWARE_CONFIG,
               ...(val.data as Partial<HardwareConfig>),
             });
-          } else if (val.id === 'categories' && Array.isArray(val.data?.items)) {
+          } else if (val.id === categoriesDocId && Array.isArray(val.data?.items)) {
             const cleaned = (val.data.items as unknown[])
               .filter((c): c is string => typeof c === 'string')
               .map((c) => c.trim().slice(0, 40))
@@ -520,7 +560,7 @@ export default function App() {
             if (cleaned.length > 0) {
               setCustomCategories(Array.from(new Set(cleaned)).slice(0, 60));
             }
-          } else if (val.id === 'ticketSeq' && typeof val.data?.nextTicketSeq === 'number') {
+          } else if (val.id === ticketSeqDocId && typeof val.data?.nextTicketSeq === 'number') {
             setNextTicketSeq(val.data.nextTicketSeq);
           }
         }
@@ -541,9 +581,11 @@ export default function App() {
       );
     } else if (currentUser.role === 'manager' && currentUser.permissions.manageCashiers) {
       unsubStaff = onSnapshot(
-        query(collection(db, 'staff'), where('role', 'in', ['cashier', 'warehouse'])),
+        query(collection(db, 'staff'), where('assignedManagerUid', '==', currentUser.uid)),
         (snap) => {
-          const list = snap.docs.map((d) => d.data() as StaffProfile);
+          const list = snap.docs
+            .map((d) => d.data() as StaffProfile)
+            .filter((s) => s.role === 'cashier' || s.role === 'warehouse');
           list.sort((a, b) => a.fullName.localeCompare(b.fullName));
           setStaffList(list);
         },
@@ -562,7 +604,7 @@ export default function App() {
       unsubSettings();
       if (unsubStaff) unsubStaff();
     };
-  }, [authReady, currentUser, firebaseUser]);
+  }, [authReady, currentUser, firebaseUser, activeStoreId]);
 
   // 4b. Subscribe to isolated access keys only for manageable staff members
   useEffect(() => {
@@ -585,7 +627,8 @@ export default function App() {
         s.role !== 'super_admin' &&
         (currentUser.role === 'super_admin' ||
           (currentUser.role === 'manager' &&
-            (s.role === 'cashier' || s.role === 'warehouse')))
+            (s.role === 'cashier' || s.role === 'warehouse') &&
+            s.assignedManagerUid === currentUser.uid))
     );
 
     if (manageable.length === 0) {
@@ -1055,7 +1098,7 @@ export default function App() {
       };
     });
 
-    const saleId = `v-${Date.now()}`;
+    const saleId = `v-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const ticketNumber = `0001-${String(nextTicketSeq).padStart(8, '0')}`;
     const nowIso = new Date().toISOString();
 
@@ -1100,7 +1143,7 @@ export default function App() {
 
     const saleDocPayload: Record<string, unknown> = {
       id: newSale.id,
-      storeId: STORE_ID,
+      storeId: activeStoreId,
       ticketNumber: newSale.ticketNumber,
       shiftId: newSale.shiftId,
       timestamp: newSale.timestamp,
@@ -1137,7 +1180,7 @@ export default function App() {
         const smId = `sm-${Date.now()}-${prod.id}`;
         batch.set(doc(db, 'stockMovements', smId), {
           id: smId,
-          storeId: STORE_ID,
+          storeId: activeStoreId,
           productId: prod.id,
           productName: prod.name.slice(0, 160),
           timestamp: nowIso,
@@ -1150,9 +1193,10 @@ export default function App() {
         });
       }
 
-      batch.set(doc(db, 'settings', 'ticketSeq'), {
-        id: 'ticketSeq',
-        storeId: STORE_ID,
+      const ticketSeqDocId = getStoreSettingDocId(activeStoreId, 'ticketSeq');
+      batch.set(doc(db, 'settings', ticketSeqDocId), {
+        id: ticketSeqDocId,
+        storeId: activeStoreId,
         data: { nextTicketSeq: nextTicketSeq + 1 },
         updatedByUid: currentUser.uid,
         updatedAt: serverTimestamp(),
@@ -1212,7 +1256,7 @@ export default function App() {
         const smId = `sm-${Date.now()}-${prod.id}-void`;
         batch.set(doc(db, 'stockMovements', smId), {
           id: smId,
-          storeId: STORE_ID,
+          storeId: activeStoreId,
           productId: prod.id,
           productName: prod.name.slice(0, 160),
           timestamp: nowIso,
@@ -1243,11 +1287,11 @@ export default function App() {
     openingFloat: number;
   }) => {
     if (!currentUser) return;
-    const id = `turno-${Date.now()}`;
+    const id = `turno-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
       await setDoc(doc(db, 'shifts', id), {
         id,
-        storeId: STORE_ID,
+        storeId: activeStoreId,
         registerName: registerName.slice(0, 60),
         cashier: cashier.slice(0, 120),
         openedByUid: currentUser.uid,
@@ -1311,11 +1355,11 @@ export default function App() {
     reason: string;
   }) => {
     if (!activeShift || !currentUser) return;
-    const id = `cm-${Date.now()}`;
+    const id = `cm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
       await setDoc(doc(db, 'cashMovements', id), {
         id,
-        storeId: STORE_ID,
+        storeId: activeStoreId,
         shiftId: activeShift.id,
         timestamp: new Date().toISOString(),
         type,
@@ -1340,10 +1384,10 @@ export default function App() {
       if (isNew) {
         await setDoc(
           doc(db, 'products', product.id),
-          serializeProductDoc(product, currentUser.uid, true)
+          serializeProductDoc(product, currentUser.uid, true, activeStoreId)
         );
       } else {
-        const updatePayload = serializeProductDoc(product, currentUser.uid, false);
+        const updatePayload = serializeProductDoc(product, currentUser.uid, false, activeStoreId);
         delete updatePayload.id;
         delete updatePayload.storeId;
         await updateDoc(doc(db, 'products', product.id), updatePayload);
@@ -1398,7 +1442,7 @@ export default function App() {
       batch.update(doc(db, 'products', productId), prodUpdate);
       batch.set(doc(db, 'stockMovements', smId), {
         id: smId,
-        storeId: STORE_ID,
+        storeId: activeStoreId,
         productId: target.id,
         productName: target.name.slice(0, 160),
         timestamp: new Date().toISOString(),
@@ -1446,32 +1490,34 @@ export default function App() {
     const finalItems = (clean.length > 0 ? clean : ['Almacén']).slice(0, 60);
     setCustomCategories(finalItems);
     if (!currentUser) return;
+    const categoriesDocId = getStoreSettingDocId(activeStoreId, 'categories');
     try {
-      await setDoc(doc(db, 'settings', 'categories'), {
-        id: 'categories',
-        storeId: STORE_ID,
+      await setDoc(doc(db, 'settings', categoriesDocId), {
+        id: categoriesDocId,
+        storeId: activeStoreId,
         data: { items: finalItems },
         updatedByUid: currentUser.uid,
         updatedAt: serverTimestamp(),
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'settings/categories');
+      handleFirestoreError(err, OperationType.WRITE, `settings/${categoriesDocId}`);
     }
   };
 
   const handleUpdateHardwareConfig = async (next: HardwareConfig) => {
     setHardwareConfig(next);
     if (!currentUser) return;
+    const hardwareDocId = getStoreSettingDocId(activeStoreId, 'hardware');
     try {
-      await setDoc(doc(db, 'settings', 'hardware'), {
-        id: 'hardware',
-        storeId: STORE_ID,
+      await setDoc(doc(db, 'settings', hardwareDocId), {
+        id: hardwareDocId,
+        storeId: activeStoreId,
         data: next,
         updatedByUid: currentUser.uid,
         updatedAt: serverTimestamp(),
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'settings/hardware');
+      handleFirestoreError(err, OperationType.WRITE, `settings/${hardwareDocId}`);
     }
   };
 
@@ -1479,27 +1525,29 @@ export default function App() {
     const clean = sanitizeStoreSettings(next);
     setStore(clean);
     if (!currentUser) return;
+    const storeDocId = getStoreSettingDocId(activeStoreId, 'store');
     try {
-      await setDoc(doc(db, 'settings', 'store'), {
-        id: 'store',
-        storeId: STORE_ID,
+      await setDoc(doc(db, 'settings', storeDocId), {
+        id: storeDocId,
+        storeId: activeStoreId,
         data: clean,
         updatedByUid: currentUser.uid,
         updatedAt: serverTimestamp(),
       });
       showToast('Datos del comercio guardados correctamente', 'ok');
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'settings/store');
+      handleFirestoreError(err, OperationType.WRITE, `settings/${storeDocId}`);
     }
   };
 
-  // --- Staff Management (Admin -> Gerente/Cajero/Depositero, Gerente -> Cajero/Depositero) ---
+  // --- Staff Management (Admin -> Gerente/Cajero/Depositero, Gerente -> Cajero/Depositero propio) ---
   const handleCreateStaff = async ({
     fullName,
     username,
     password,
     role,
     jobTitle,
+    assignedManagerUid,
     permissions,
   }: {
     fullName: string;
@@ -1507,6 +1555,7 @@ export default function App() {
     password: string;
     role: 'manager' | 'cashier' | 'warehouse';
     jobTitle?: string;
+    assignedManagerUid?: string;
     permissions: StaffPermissions;
   }) => {
     if (!currentUser) return;
@@ -1533,6 +1582,12 @@ export default function App() {
     }
     if (currentUser.role === 'manager' && (role === 'cashier' || role === 'warehouse')) {
       profilePayload.assignedManagerUid = currentUser.uid;
+    } else if (
+      currentUser.role === 'super_admin' &&
+      (role === 'cashier' || role === 'warehouse') &&
+      assignedManagerUid?.trim()
+    ) {
+      profilePayload.assignedManagerUid = assignedManagerUid.trim().slice(0, 128);
     }
 
     try {
@@ -1557,6 +1612,7 @@ export default function App() {
       permissions: StaffPermissions;
       role: StaffProfile['role'];
       jobTitle?: string;
+      assignedManagerUid?: string;
       currentPassword?: string;
       newPassword?: string;
     }
@@ -1586,15 +1642,25 @@ export default function App() {
       });
     }
 
+    const updatePayload: Record<string, unknown> = {
+      fullName: updates.fullName.slice(0, 120),
+      active: updates.active,
+      role: updates.role,
+      jobTitle: (updates.jobTitle || '').trim().slice(0, 60),
+      permissions: updates.permissions,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (currentUser.role === 'super_admin' && (updates.role === 'cashier' || updates.role === 'warehouse')) {
+      if (updates.assignedManagerUid?.trim()) {
+        updatePayload.assignedManagerUid = updates.assignedManagerUid.trim().slice(0, 128);
+      } else if (target?.assignedManagerUid) {
+        updatePayload.assignedManagerUid = '';
+      }
+    }
+
     try {
-      await updateDoc(doc(db, 'staff', uid), {
-        fullName: updates.fullName.slice(0, 120),
-        active: updates.active,
-        role: updates.role,
-        jobTitle: (updates.jobTitle || '').trim().slice(0, 60),
-        permissions: updates.permissions,
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(doc(db, 'staff', uid), updatePayload);
       showToast(
         updates.newPassword?.trim()
           ? 'Datos, clave de acceso y permisos actualizados'
@@ -1892,11 +1958,13 @@ export default function App() {
           {activeTab === 'cash' &&
             (currentUser.permissions.manageCash || currentUser.permissions.operatePos) && (
               <CashRegister
+                key={activeStoreId}
                 activeShift={activeShift}
                 closedShifts={closedShifts}
                 sales={sales}
                 cashMovements={cashMovements}
                 store={store}
+                defaultCashierName={currentUser.fullName}
                 canManageCash={currentUser.permissions.manageCash}
                 canVoidSales={currentUser.permissions.voidSales}
                 onOpenShift={handleOpenShift}

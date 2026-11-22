@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { KeyRound, Lock, ShieldCheck, User } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Lock, ShieldCheck, User } from 'lucide-react';
 import {
   SUPER_ADMIN_EMAIL,
   auth,
@@ -16,6 +16,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
   const [mode, setMode] = useState<'staff' | 'admin'>('admin');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showProviderHelp, setShowProviderHelp] = useState(false);
@@ -67,12 +68,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
         setErrorMsg(
           'El método Correo electrónico/contraseña aún no está habilitado en Firebase Authentication.'
         );
+      } else if (code === 'auth/invalid-email') {
+        setErrorMsg('El formato del usuario o email ingresado no es válido.');
       } else if (
         code === 'auth/invalid-credential' ||
         code === 'auth/wrong-password' ||
         code === 'auth/user-not-found'
       ) {
-        setErrorMsg('Usuario o contraseña incorrectos.');
+        setErrorMsg('Usuario, email o contraseña incorrectos.');
       } else if (code === 'auth/user-disabled') {
         setErrorMsg('Esta cuenta fue deshabilitada por un superior.');
       } else {
@@ -181,7 +184,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
             <form onSubmit={handleStaffLogin} className="mt-5 space-y-4 text-xs">
               <div>
                 <label className="block font-medium text-stone-700">
-                  Usuario asignado
+                  Usuario o Email de acceso
                 </label>
                 <div className="relative mt-1">
                   <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
@@ -191,7 +194,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
                     autoComplete="username"
                     value={usernameOrEmail}
                     onChange={(e) => setUsernameOrEmail(e.target.value)}
-                    placeholder="Ej: gerente.luis o caja01"
+                    placeholder="Ej: mabel o mabel@minimarket.local"
                     className="w-full rounded-lg border border-stone-300 py-2.5 pl-9 pr-3 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
                   />
                 </div>
@@ -202,14 +205,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
                 <div className="relative mt-1">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-lg border border-stone-300 py-2.5 pl-9 pr-3 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-lg border border-stone-300 py-2.5 pl-9 pr-10 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-stone-400 hover:bg-amber-50 hover:text-stone-700"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -222,7 +238,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
               </button>
 
               <p className="text-center text-[11px] text-stone-500">
-                Las credenciales de Gerente, Personal de Caja o Depositero son otorgadas desde
+                Cada gerente y empleado ingresa con su email o usuario local asignado desde
                 Personal y Permisos.
               </p>
             </form>

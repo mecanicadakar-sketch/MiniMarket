@@ -17,6 +17,33 @@ export const STORE_ID = 'minimarket-principal';
 export const SUPER_ADMIN_EMAIL = 'mecanicadakar@gmail.com';
 export const INTERNAL_STAFF_DOMAIN = '@minimarket.local';
 
+export function getStoreIdForStaff(profile: {
+  uid: string;
+  role: 'super_admin' | 'manager' | 'cashier' | 'warehouse';
+  assignedManagerUid?: string;
+}): string {
+  if (profile.role === 'super_admin') {
+    return STORE_ID;
+  }
+  if (profile.role === 'manager') {
+    return `mgr-${profile.uid}`.slice(0, 64);
+  }
+  if (profile.assignedManagerUid && profile.assignedManagerUid.trim()) {
+    return `mgr-${profile.assignedManagerUid.trim()}`.slice(0, 64);
+  }
+  return STORE_ID;
+}
+
+export function getStoreSettingDocId(
+  storeId: string,
+  settingKey: 'store' | 'hardware' | 'categories' | 'ticketSeq'
+): string {
+  if (storeId === STORE_ID) {
+    return settingKey;
+  }
+  return `${storeId}__${settingKey}`.slice(0, 64);
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
@@ -86,7 +113,7 @@ export async function testConnection(): Promise<void> {
 }
 
 export function sanitizeStaffUsername(usernameOrEmail: string): string {
-  const trimmed = usernameOrEmail.trim().toLowerCase();
+  const trimmed = usernameOrEmail.trim().toLowerCase().replace(/\s+/g, '');
   if (trimmed.endsWith(INTERNAL_STAFF_DOMAIN)) {
     return trimmed.slice(0, -INTERNAL_STAFF_DOMAIN.length);
   }
@@ -99,7 +126,7 @@ export function isInternalStaffEmail(email: string): boolean {
 }
 
 export function normalizeStaffEmail(usernameOrEmail: string): string {
-  const trimmed = usernameOrEmail.trim().toLowerCase();
+  const trimmed = usernameOrEmail.trim().toLowerCase().replace(/\s+/g, '');
   if (trimmed.includes('@')) return trimmed;
   const sanitized = trimmed.replace(/[^a-z0-9._-]/g, '');
   return `${sanitized}${INTERNAL_STAFF_DOMAIN}`;

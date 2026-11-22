@@ -47,11 +47,11 @@
     },
     "Product": {
       "title": "Product",
-      "description": "Artículo de inventario del minimercado",
+      "description": "Artículo de inventario del minimercado aislado por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "barcode": { "type": "string", "minLength": 1, "maxLength": 64 },
         "sku": { "type": "string", "minLength": 1, "maxLength": 40 },
         "name": { "type": "string", "minLength": 1, "maxLength": 160 },
@@ -88,11 +88,11 @@
     },
     "Shift": {
       "title": "Shift",
-      "description": "Turno de apertura y cierre de caja",
+      "description": "Turno de apertura y cierre de caja aislado por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "registerName": { "type": "string", "minLength": 1, "maxLength": 60 },
         "cashier": { "type": "string", "minLength": 1, "maxLength": 120 },
         "openedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -122,11 +122,11 @@
     },
     "Sale": {
       "title": "Sale",
-      "description": "Comprobante de venta emitido en POS",
+      "description": "Comprobante de venta emitido en POS aislado por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "ticketNumber": { "type": "string", "minLength": 1, "maxLength": 40 },
         "shiftId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "timestamp": { "type": "string", "maxLength": 40 },
@@ -166,11 +166,11 @@
     },
     "CashMovement": {
       "title": "CashMovement",
-      "description": "Movimiento manual de ingreso o retiro de efectivo en turno",
+      "description": "Movimiento manual de ingreso o retiro de efectivo en turno aislado por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "shiftId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "timestamp": { "type": "string", "maxLength": 40 },
         "type": { "type": "string", "enum": ["ingreso", "retiro"] },
@@ -195,11 +195,11 @@
     },
     "StockMovement": {
       "title": "StockMovement",
-      "description": "Auditoría de variaciones de stock",
+      "description": "Auditoría de variaciones de stock aislada por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "productId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
         "timestamp": { "type": "string", "maxLength": 40 },
@@ -226,7 +226,7 @@
     },
     "StoreSettings": {
       "title": "StoreSettings",
-      "description": "Datos fiscales, contacto, moneda e imágenes del comercio guardados en settings/store",
+      "description": "Datos fiscales, contacto, moneda e imágenes del comercio guardados por local/gerencia",
       "type": "object",
       "properties": {
         "storeName": { "type": "string", "minLength": 1, "maxLength": 120 },
@@ -253,11 +253,11 @@
     },
     "AppSetting": {
       "title": "AppSetting",
-      "description": "Configuración general de tienda, secuencia de tickets y hardware",
+      "description": "Configuración de tienda, categorías, secuencia de tickets y hardware aislada por local/gerencia",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
         "data": { "type": "object" },
         "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "updatedAt": { "type": "string", "format": "date-time" }
