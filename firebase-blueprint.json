@@ -1,0 +1,301 @@
+{
+  "entities": {
+    "StaffProfile": {
+      "title": "StaffProfile",
+      "description": "Perfil de usuario del minimercado con rol y permisos granulares",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["super_admin", "manager", "cashier"] },
+        "active": { "type": "boolean" },
+        "permissions": { "type": "object" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByRole": { "type": "string", "enum": ["super_admin", "manager"] },
+        "assignedManagerUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "username",
+        "email",
+        "fullName",
+        "role",
+        "active",
+        "permissions",
+        "createdByUid",
+        "createdByRole",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StaffCredential": {
+      "title": "StaffCredential",
+      "description": "Clave de acceso asignada al personal de gerencia o caja, aislada bajo reglas estrictas de administración",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accessKey": { "type": "string", "minLength": 6, "maxLength": 128 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "accessKey", "updatedByUid", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Artículo de inventario del minimercado",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "barcode": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "category": { "type": "string", "enum": ["Almacén", "Lácteos", "Bebidas", "Verdulería", "Panadería", "Fiambrería", "Limpieza"] },
+        "unit": { "type": "string", "enum": ["u", "kg"] },
+        "costPrice": { "type": "number" },
+        "salePrice": { "type": "number" },
+        "taxRate": { "type": "number" },
+        "stock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "expiryDate": { "type": "string", "maxLength": 20 },
+        "batchCode": { "type": "string", "maxLength": 40 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "barcode",
+        "sku",
+        "name",
+        "category",
+        "unit",
+        "costPrice",
+        "salePrice",
+        "taxRate",
+        "stock",
+        "minStock",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Turno de apertura y cierre de caja",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "registerName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "cashier": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "openedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "openedAt": { "type": "string", "maxLength": 40 },
+        "closedAt": { "type": "string", "maxLength": 40 },
+        "openingFloat": { "type": "number" },
+        "expectedCash": { "type": "number" },
+        "countedCash": { "type": "number" },
+        "difference": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "enum": ["abierto", "cerrado"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "registerName",
+        "cashier",
+        "openedByUid",
+        "openedAt",
+        "openingFloat",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Comprobante de venta emitido en POS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "ticketNumber": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "shiftId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "timestamp": { "type": "string", "maxLength": 40 },
+        "cashier": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "cashierUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "documentType": { "type": "string", "enum": ["Ticket", "Factura B", "Factura A"] },
+        "customer": { "type": "object" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discountTotal": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "total": { "type": "number" },
+        "payment": { "type": "object" },
+        "status": { "type": "string", "enum": ["completada", "anulada"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "ticketNumber",
+        "shiftId",
+        "timestamp",
+        "cashier",
+        "cashierUid",
+        "documentType",
+        "items",
+        "subtotal",
+        "discountTotal",
+        "taxTotal",
+        "total",
+        "payment",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CashMovement": {
+      "title": "CashMovement",
+      "description": "Movimiento manual de ingreso o retiro de efectivo en turno",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "shiftId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "timestamp": { "type": "string", "maxLength": 40 },
+        "type": { "type": "string", "enum": ["ingreso", "retiro"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "amount": { "type": "number" },
+        "operator": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "operatorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "shiftId",
+        "timestamp",
+        "type",
+        "reason",
+        "amount",
+        "operator",
+        "operatorUid",
+        "createdAt"
+      ]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Auditoría de variaciones de stock",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "timestamp": { "type": "string", "maxLength": 40 },
+        "type": { "type": "string", "enum": ["venta", "ingreso", "merma", "ajuste", "anulacion"] },
+        "delta": { "type": "number" },
+        "resultingStock": { "type": "number" },
+        "note": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "productId",
+        "productName",
+        "timestamp",
+        "type",
+        "delta",
+        "resultingStock",
+        "note",
+        "actorUid",
+        "createdAt"
+      ]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Datos fiscales, contacto, moneda e imágenes del comercio guardados en settings/store",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "legalName": { "type": "string", "maxLength": 160 },
+        "taxId": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 60 },
+        "email": { "type": "string", "maxLength": 160 },
+        "receiptFooter": { "type": "string", "maxLength": 300 },
+        "currencySymbol": { "type": "string", "minLength": 1, "maxLength": 12 },
+        "logoUrl": { "type": "string", "maxLength": 250000 },
+        "bannerUrl": { "type": "string", "maxLength": 450000 },
+        "topBannerUrl": { "type": "string", "maxLength": 250000 }
+      },
+      "required": [
+        "storeName",
+        "legalName",
+        "taxId",
+        "address",
+        "phone",
+        "receiptFooter",
+        "currencySymbol"
+      ]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Configuración general de tienda, secuencia de tickets y hardware",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "data": { "type": "object" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "storeId", "data", "updatedByUid", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/staff/{staffId}": {
+      "schema": { "$ref": "#/entities/StaffProfile" },
+      "description": "Cuentas del personal con rol (super_admin, manager, cashier) y permisos granulares"
+    },
+    "/staff/{staffId}/credentials/{credId}": {
+      "schema": { "$ref": "#/entities/StaffCredential" },
+      "description": "Subcolección aislada con la clave asignada al empleado (solo accesible por Administrador General o Gerente autorizado)"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Catálogo e inventario de productos del minimercado"
+    },
+    "/shifts/{shiftId}": {
+      "schema": { "$ref": "#/entities/Shift" },
+      "description": "Turnos de caja abiertos y cerrados"
+    },
+    "/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/Sale" },
+      "description": "Ventas y comprobantes emitidos"
+    },
+    "/cashMovements/{movementId}": {
+      "schema": { "$ref": "#/entities/CashMovement" },
+      "description": "Ingresos y retiros de efectivo por turno"
+    },
+    "/stockMovements/{movementId}": {
+      "schema": { "$ref": "#/entities/StockMovement" },
+      "description": "Historial de auditoría de movimientos de stock"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSetting" },
+      "description": "Configuración de tienda, numeración de tickets y periféricos"
+    }
+  }
+}

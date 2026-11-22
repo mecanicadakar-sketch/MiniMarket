@@ -1,0 +1,6 @@
+{
+  "name": "Mini Market",
+  "description": "Sistema Punto de Venta (POS / TPV) para minimercados y autoservicios con cobro rápido, control de inventario y vencimientos, gestión de caja por turno e integración de periféricos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

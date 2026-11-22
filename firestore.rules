@@ -1,0 +1,708 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Core Identity & Validation Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'mecanicadakar@gmail.com';
+    }
+
+    function hasStaffRecord() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    function staffData() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return hasStaffRecord() && staffData().active == true;
+    }
+
+    function isManager() {
+      return isActiveStaff() && staffData().role == 'manager';
+    }
+
+    function hasPermission(perm) {
+      return isSuperAdmin() || (isActiveStaff() && staffData().permissions[perm] == true);
+    }
+
+    function isAuthorizedStaffOrAdmin() {
+      return isSuperAdmin() || isActiveStaff();
+    }
+
+    function isValidPermissionsMap(perms, role) {
+      return perms is map
+        && perms.keys().hasAll([
+          'operatePos',
+          'applyDiscounts',
+          'voidSales',
+          'manageCash',
+          'viewInventory',
+          'manageInventory',
+          'manageHardware',
+          'manageCashiers',
+          'manageManagers'
+        ])
+        && perms.keys().hasOnly([
+          'operatePos',
+          'applyDiscounts',
+          'voidSales',
+          'manageCash',
+          'viewInventory',
+          'manageInventory',
+          'manageHardware',
+          'manageCashiers',
+          'manageManagers'
+        ])
+        && perms.operatePos is bool
+        && perms.applyDiscounts is bool
+        && perms.voidSales is bool
+        && perms.manageCash is bool
+        && perms.viewInventory is bool
+        && perms.manageInventory is bool
+        && perms.manageHardware is bool
+        && perms.manageCashiers is bool
+        && perms.manageManagers is bool
+        // Strictly block privilege escalation in permissions map by role
+        && (role == 'super_admin' || perms.manageManagers == false)
+        && (role != 'cashier' || (perms.manageCashiers == false && perms.manageManagers == false));
+    }
+
+    function isValidStaffProfile(data) {
+      return data is map
+        && data.keys().hasAll([
+          'uid',
+          'username',
+          'email',
+          'fullName',
+          'role',
+          'active',
+          'permissions',
+          'createdByUid',
+          'createdByRole',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'username',
+          'email',
+          'fullName',
+          'role',
+          'active',
+          'permissions',
+          'createdByUid',
+          'createdByRole',
+          'assignedManagerUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.username is string && data.username.size() >= 2 && data.username.size() <= 80
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
+        && data.role in ['super_admin', 'manager', 'cashier']
+        && data.active is bool
+        && isValidPermissionsMap(data.permissions, data.role)
+        && data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128
+        && data.createdByRole in ['super_admin', 'manager']
+        && (!('assignedManagerUid' in data) || (data.assignedManagerUid is string && data.assignedManagerUid.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStaffCredential(data, staffId) {
+      return data is map
+        && data.keys().hasAll(['uid', 'accessKey', 'updatedByUid', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'accessKey', 'updatedByUid', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == staffId
+        && data.accessKey is string && data.accessKey.size() >= 6 && data.accessKey.size() <= 128
+        && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'barcode',
+          'sku',
+          'name',
+          'category',
+          'unit',
+          'costPrice',
+          'salePrice',
+          'taxRate',
+          'stock',
+          'minStock',
+          'updatedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'barcode',
+          'sku',
+          'name',
+          'category',
+          'unit',
+          'costPrice',
+          'salePrice',
+          'taxRate',
+          'stock',
+          'minStock',
+          'expiryDate',
+          'batchCode',
+          'updatedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64
+        && data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 40
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && data.category in ['Almacén', 'Lácteos', 'Bebidas', 'Verdulería', 'Panadería', 'Fiambrería', 'Limpieza']
+        && data.unit in ['u', 'kg']
+        && data.costPrice is number && data.costPrice >= 0
+        && data.salePrice is number && data.salePrice >= 0
+        && data.taxRate is number && data.taxRate >= 0 && data.taxRate <= 100
+        && data.stock is number && data.stock >= 0
+        && data.minStock is number && data.minStock >= 0
+        && (!('expiryDate' in data) || (data.expiryDate is string && data.expiryDate.size() <= 20))
+        && (!('batchCode' in data) || (data.batchCode is string && data.batchCode.size() <= 40))
+        && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidShift(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'registerName',
+          'cashier',
+          'openedByUid',
+          'openedAt',
+          'openingFloat',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'registerName',
+          'cashier',
+          'openedByUid',
+          'openedAt',
+          'closedAt',
+          'openingFloat',
+          'expectedCash',
+          'countedCash',
+          'difference',
+          'notes',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && data.registerName is string && data.registerName.size() >= 1 && data.registerName.size() <= 60
+        && data.cashier is string && data.cashier.size() >= 1 && data.cashier.size() <= 120
+        && data.openedByUid is string && data.openedByUid.size() >= 1 && data.openedByUid.size() <= 128
+        && data.openedAt is string && data.openedAt.size() >= 1 && data.openedAt.size() <= 40
+        && (!('closedAt' in data) || (data.closedAt is string && data.closedAt.size() <= 40))
+        && data.openingFloat is number && data.openingFloat >= 0
+        && (!('expectedCash' in data) || data.expectedCash is number)
+        && (!('countedCash' in data) || data.countedCash is number)
+        && (!('difference' in data) || data.difference is number)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.status in ['abierto', 'cerrado']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSale(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'ticketNumber',
+          'shiftId',
+          'timestamp',
+          'cashier',
+          'cashierUid',
+          'documentType',
+          'items',
+          'subtotal',
+          'discountTotal',
+          'taxTotal',
+          'total',
+          'payment',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'ticketNumber',
+          'shiftId',
+          'timestamp',
+          'cashier',
+          'cashierUid',
+          'documentType',
+          'customer',
+          'items',
+          'subtotal',
+          'discountTotal',
+          'taxTotal',
+          'total',
+          'payment',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && data.ticketNumber is string && data.ticketNumber.size() >= 1 && data.ticketNumber.size() <= 40
+        && isValidId(data.shiftId)
+        && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
+        && data.cashier is string && data.cashier.size() >= 1 && data.cashier.size() <= 120
+        && data.cashierUid is string && data.cashierUid.size() >= 1 && data.cashierUid.size() <= 128
+        && data.documentType in ['Ticket', 'Factura B', 'Factura A']
+        && (!('customer' in data) || data.customer is map)
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 200 && data.items[0] is map
+        && data.subtotal is number && data.subtotal >= 0
+        && data.discountTotal is number && data.discountTotal >= 0
+        && data.taxTotal is number && data.taxTotal >= 0
+        && data.total is number && data.total >= 0
+        && data.payment is map
+        && data.status in ['completada', 'anulada']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCashMovement(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'shiftId',
+          'timestamp',
+          'type',
+          'reason',
+          'amount',
+          'operator',
+          'operatorUid',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'shiftId',
+          'timestamp',
+          'type',
+          'reason',
+          'amount',
+          'operator',
+          'operatorUid',
+          'createdAt'
+        ])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && isValidId(data.shiftId)
+        && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
+        && data.type in ['ingreso', 'retiro']
+        && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 200
+        && data.amount is number && data.amount > 0
+        && data.operator is string && data.operator.size() >= 1 && data.operator.size() <= 120
+        && data.operatorUid is string && data.operatorUid.size() >= 1 && data.operatorUid.size() <= 128
+        && data.createdAt is timestamp;
+    }
+
+    function isValidStockMovement(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'productId',
+          'productName',
+          'timestamp',
+          'type',
+          'delta',
+          'resultingStock',
+          'note',
+          'actorUid',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'productId',
+          'productName',
+          'timestamp',
+          'type',
+          'delta',
+          'resultingStock',
+          'note',
+          'actorUid',
+          'createdAt'
+        ])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && isValidId(data.productId)
+        && data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 160
+        && data.timestamp is string && data.timestamp.size() >= 1 && data.timestamp.size() <= 40
+        && data.type in ['venta', 'ingreso', 'merma', 'ajuste', 'anulacion']
+        && data.delta is number
+        && data.resultingStock is number && data.resultingStock >= 0
+        && data.note is string && data.note.size() >= 1 && data.note.size() <= 200
+        && data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128
+        && data.createdAt is timestamp;
+    }
+
+    function isValidStoreSettingsData(d) {
+      return d is map
+        && d.keys().hasAll([
+          'storeName',
+          'legalName',
+          'taxId',
+          'address',
+          'phone',
+          'receiptFooter',
+          'currencySymbol'
+        ])
+        && d.keys().hasOnly([
+          'storeName',
+          'legalName',
+          'taxId',
+          'address',
+          'phone',
+          'email',
+          'receiptFooter',
+          'currencySymbol',
+          'logoUrl',
+          'bannerUrl',
+          'topBannerUrl'
+        ])
+        && d.storeName is string && d.storeName.size() >= 1 && d.storeName.size() <= 120
+        && d.legalName is string && d.legalName.size() <= 160
+        && d.taxId is string && d.taxId.size() <= 40
+        && d.address is string && d.address.size() <= 200
+        && d.phone is string && d.phone.size() <= 60
+        && d.receiptFooter is string && d.receiptFooter.size() <= 300
+        && d.currencySymbol is string && d.currencySymbol.size() >= 1 && d.currencySymbol.size() <= 12
+        && (!('email' in d) || (d.email is string && d.email.size() <= 160))
+        && (!('logoUrl' in d) || (d.logoUrl is string && d.logoUrl.size() <= 250000))
+        && (!('bannerUrl' in d) || (d.bannerUrl is string && d.bannerUrl.size() <= 450000))
+        && (!('topBannerUrl' in d) || (d.topBannerUrl is string && d.topBannerUrl.size() <= 250000));
+    }
+
+    function isValidAppSetting(data) {
+      return data is map
+        && data.keys().hasAll(['id', 'storeId', 'data', 'updatedByUid', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'storeId', 'data', 'updatedByUid', 'updatedAt'])
+        && isValidId(data.id)
+        && data.storeId == 'minimarket-principal'
+        && data.data is map
+        && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Connection Check Document ---
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // --- Staff & Permissions Collection ---
+    match /staff/{staffId} {
+      allow get: if isValidId(staffId) && (
+        isSuperAdmin()
+        || (isSignedIn() && request.auth.uid == staffId)
+        || (isManager() && hasPermission('manageCashiers') && existing().role == 'cashier')
+      );
+
+      allow list: if isSuperAdmin() || (
+        isActiveStaff() && (
+          resource.data.uid == request.auth.uid
+          || (staffData().role == 'manager'
+              && staffData().permissions.manageCashiers == true
+              && resource.data.role == 'cashier')
+        )
+      );
+
+      allow create: if isValidId(staffId)
+        && isValidStaffProfile(incoming())
+        && incoming().uid == staffId
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          // Super Admin bootstrapping their own super_admin profile or creating managers/cashiers
+          (isSuperAdmin() && incoming().createdByRole == 'super_admin' && (
+            (staffId == request.auth.uid && incoming().role == 'super_admin')
+            || (incoming().role in ['manager', 'cashier'])
+          ))
+          // Manager creating cashiers only
+          || (isManager() && hasPermission('manageCashiers')
+              && incoming().createdByRole == 'manager'
+              && incoming().role == 'cashier')
+        );
+
+      allow update: if isValidId(staffId)
+        && isValidStaffProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdByRole == existing().createdByRole
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isSuperAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'email', 'role', 'active', 'permissions', 'assignedManagerUid', 'updatedAt'])
+            && (staffId == request.auth.uid || incoming().role in ['manager', 'cashier']))
+          || (isManager() && hasPermission('manageCashiers')
+              && existing().role == 'cashier'
+              && incoming().role == 'cashier'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'active', 'permissions', 'assignedManagerUid', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(staffId) && (
+        (isSuperAdmin() && staffId != request.auth.uid)
+        || (isManager() && hasPermission('manageCashiers') && existing().role == 'cashier')
+      );
+
+      match /credentials/{credId} {
+        allow get: if isValidId(staffId) && isValidId(credId) && credId == 'access'
+          && exists(/databases/$(database)/documents/staff/$(staffId))
+          && (
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            || (isManager() && hasPermission('manageCashiers')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+          );
+
+        allow list: if false;
+
+        allow create, update: if isValidId(staffId) && isValidId(credId) && credId == 'access'
+          && isValidStaffCredential(incoming(), staffId)
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/staff/$(staffId))
+          && (
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            || (isManager() && hasPermission('manageCashiers')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+          );
+
+        allow delete: if isValidId(staffId) && isValidId(credId) && credId == 'access'
+          && exists(/databases/$(database)/documents/staff/$(staffId))
+          && (
+            (isSuperAdmin() && get(/databases/$(database)/documents/staff/$(staffId)).data.role in ['manager', 'cashier'])
+            || (isManager() && hasPermission('manageCashiers')
+                && get(/databases/$(database)/documents/staff/$(staffId)).data.role == 'cashier')
+          );
+      }
+    }
+
+    // --- Products & Inventory ---
+    match /products/{productId} {
+      allow get: if isValidId(productId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(productId)
+        && hasPermission('manageInventory')
+        && isValidProduct(incoming())
+        && incoming().id == productId
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(productId)
+        && isValidProduct(incoming())
+        && incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && (
+          (hasPermission('manageInventory')
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'barcode', 'sku', 'name', 'category', 'unit', 'costPrice', 'salePrice',
+              'taxRate', 'stock', 'minStock', 'expiryDate', 'batchCode', 'updatedByUid', 'updatedAt'
+            ]))
+          || ((hasPermission('operatePos') || hasPermission('voidSales'))
+              && incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedByUid', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(productId) && hasPermission('manageInventory');
+    }
+
+    // --- Cash Shifts ---
+    match /shifts/{shiftId} {
+      allow get: if isValidId(shiftId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(shiftId)
+        && hasPermission('manageCash')
+        && isValidShift(incoming())
+        && incoming().id == shiftId
+        && incoming().openedByUid == request.auth.uid
+        && incoming().status == 'abierto'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(shiftId)
+        && isValidShift(incoming())
+        && incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().openedByUid == existing().openedByUid
+        && incoming().openedAt == existing().openedAt
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin()
+          || (hasPermission('manageCash')
+              && existing().status == 'abierto'
+              && incoming().status == 'cerrado'
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'status', 'closedAt', 'expectedCash', 'countedCash', 'difference', 'notes', 'updatedAt'
+              ]))
+        );
+
+      allow delete: if isValidId(shiftId) && isSuperAdmin();
+    }
+
+    // --- Sales / Receipts ---
+    match /sales/{saleId} {
+      allow get: if isValidId(saleId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(saleId)
+        && hasPermission('operatePos')
+        && isValidSale(incoming())
+        && incoming().id == saleId
+        && incoming().cashierUid == request.auth.uid
+        && incoming().status == 'completada'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId));
+
+      allow update: if isValidId(saleId)
+        && isValidSale(incoming())
+        && incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().cashierUid == existing().cashierUid
+        && incoming().shiftId == existing().shiftId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin()
+          || (hasPermission('voidSales')
+              && existing().status == 'completada'
+              && incoming().status == 'anulada'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(saleId) && isSuperAdmin();
+    }
+
+    // --- Cash Movements ---
+    match /cashMovements/{movementId} {
+      allow get: if isValidId(movementId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(movementId)
+        && hasPermission('manageCash')
+        && isValidCashMovement(incoming())
+        && incoming().id == movementId
+        && incoming().operatorUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/shifts/$(incoming().shiftId));
+
+      allow update: if false;
+      allow delete: if isValidId(movementId) && isSuperAdmin();
+    }
+
+    // --- Stock Movements ---
+    match /stockMovements/{movementId} {
+      allow get: if isValidId(movementId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(movementId)
+        && (hasPermission('manageInventory') || hasPermission('operatePos') || hasPermission('voidSales'))
+        && isValidStockMovement(incoming())
+        && incoming().id == movementId
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+
+      allow update: if false;
+      allow delete: if isValidId(movementId) && isSuperAdmin();
+    }
+
+    // --- Store & Hardware Settings ---
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && isAuthorizedStaffOrAdmin();
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == 'minimarket-principal';
+
+      allow create: if isValidId(settingId)
+        && isValidAppSetting(incoming())
+        && incoming().id == settingId
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
+        && (
+          isSuperAdmin()
+          || hasPermission('manageHardware')
+          || (settingId == 'store' && isManager())
+          || (settingId == 'ticketSeq' && hasPermission('operatePos'))
+        );
+
+      allow update: if isValidId(settingId)
+        && isValidAppSetting(incoming())
+        && incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['data', 'updatedByUid', 'updatedAt'])
+        && (settingId != 'store' || isValidStoreSettingsData(incoming().data))
+        && (
+          isSuperAdmin()
+          || hasPermission('manageHardware')
+          || (settingId == 'store' && isManager())
+          || (settingId == 'ticketSeq' && hasPermission('operatePos'))
+        );
+
+      allow delete: if isValidId(settingId) && isSuperAdmin();
+    }
+  }
+}
