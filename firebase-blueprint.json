@@ -64,6 +64,8 @@
         "minStock": { "type": "number" },
         "expiryDate": { "type": "string", "maxLength": 20 },
         "batchCode": { "type": "string", "maxLength": 40 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "supplierName": { "type": "string", "maxLength": 120 },
         "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -263,6 +265,58 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "storeId", "data", "updatedByUid", "updatedAt"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Proveedor de mercadería aislado por local/gerencia",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "storeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(minimarket-principal|mgr-[a-zA-Z0-9_\\-]+)$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "taxId": { "type": "string", "maxLength": 40 },
+        "contactName": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 60 },
+        "email": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 60 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "storeId", "name", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "AppPricing": {
+      "title": "AppPricing",
+      "description": "Precios de suscripción de la app y número de pagos administrados por el Administrador General",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^pricing$" },
+        "paymentPhone": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "currencySymbol": { "type": "string", "minLength": 1, "maxLength": 12 },
+        "monthlyPrice": { "type": "number" },
+        "monthlyNote": { "type": "string", "maxLength": 160 },
+        "semiannualPrice": { "type": "number" },
+        "semiannualNote": { "type": "string", "maxLength": 160 },
+        "annualPrice": { "type": "number" },
+        "annualNote": { "type": "string", "maxLength": 160 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "paymentPhone",
+        "currencySymbol",
+        "monthlyPrice",
+        "monthlyNote",
+        "semiannualPrice",
+        "semiannualNote",
+        "annualPrice",
+        "annualNote",
+        "updatedByUid",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -277,6 +331,10 @@
     "/products/{productId}": {
       "schema": { "$ref": "#/entities/Product" },
       "description": "Catálogo e inventario de productos del minimercado"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": { "$ref": "#/entities/Supplier" },
+      "description": "Directorio de proveedores aislado por local/gerencia"
     },
     "/shifts/{shiftId}": {
       "schema": { "$ref": "#/entities/Shift" },
@@ -297,6 +355,10 @@
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/AppSetting" },
       "description": "Configuración de tienda, numeración de tickets y periféricos"
+    },
+    "/appConfig/{configId}": {
+      "schema": { "$ref": "#/entities/AppPricing" },
+      "description": "Configuración pública de precios y datos de pago de la aplicación"
     }
   }
 }

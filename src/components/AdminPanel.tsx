@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
   Copy,
+  CreditCard,
   Edit3,
   ExternalLink,
   Eye,
@@ -10,13 +11,14 @@ import {
   KeyRound,
   Plus,
   RefreshCw,
+  Save,
   Shield,
   Trash2,
   UserCheck,
   UserX,
   X,
 } from 'lucide-react';
-import { StaffPermissions, StaffProfile, StaffRole } from '../types/pos';
+import { AppPricingConfig, StaffPermissions, StaffProfile, StaffRole } from '../types/pos';
 import {
   isInternalStaffEmail,
   normalizeStaffEmail,
@@ -27,6 +29,9 @@ interface AdminPanelProps {
   currentUser: StaffProfile;
   staffList: StaffProfile[];
   staffKeys: Record<string, string>;
+  pricing?: AppPricingConfig;
+  readOnly?: boolean;
+  onSavePricing?: (next: AppPricingConfig) => Promise<void>;
   onCreateStaff: (payload: {
     fullName: string;
     username: string;
@@ -169,17 +174,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   currentUser,
   staffList,
   staffKeys,
+  pricing,
+  readOnly = false,
+  onSavePricing,
   onCreateStaff,
   onUpdateStaff,
   onDeleteStaff,
 }) => {
-  const isSuperAdmin = currentUser.role === 'super_admin';
+  const isSuperAdmin = currentUser.role === 'super_admin' && !readOnly;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [showAuthProviderNotice, setShowAuthProviderNotice] = useState(false);
+
+  const [pricingDraft, setPricingDraft] = useState<AppPricingConfig | null>(pricing ?? null);
+  const [savingPricing, setSavingPricing] = useState(false);
+
+  useEffect(() => {
+    setPricingDraft(pricing ?? null);
+  }, [pricing]);
 
   // Table key visibility & clipboard feedback
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
@@ -250,6 +265,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const openCreateModal = () => {
+    if (readOnly) return;
     const defaultRole: 'manager' | 'cashier' | 'warehouse' = isSuperAdmin ? 'manager' : 'cashier';
     setNewRole(defaultRole);
     setNewJobTitle(defaultJobTitleForRole(defaultRole));
@@ -282,6 +298,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const openEditModal = (staff: StaffProfile) => {
+    if (readOnly) return;
     setEditingStaff(staff);
     setEditName(staff.fullName);
     setEditActive(staff.active);
@@ -456,8 +473,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const cleanUsernameInput = sanitizeStaffUsername(username);
   const generatedFirebaseEmail = cleanUsernameInput ? normalizeStaffEmail(cleanUsernameInput) : '';
 
+  const handlePricingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSuperAdmin || readOnly || !pricingDraft || !onSavePricing) return;
+    setSavingPricing(true);
+    try {
+      await onSavePricing({
+        paymentPhone: pricingDraft.paymentPhone.trim().slice(0, 60) || '+595-975635770',
+        currencySymbol: pricingDraft.currencySymbol.trim().slice(0, 12) || 'Gs.',
+        monthlyPrice: Math.max(0, Number(pricingDraft.monthlyPrice) || 0),
+        monthlyNote: pricingDraft.monthlyNote.trim().slice(0, 160),
+        semiannualPrice: Math.max(0, Number(pricingDraft.semiannualPrice) || 0),
+        semiannualNote: pricingDraft.semiannualNote.trim().slice(0, 160),
+        annualPrice: Math.max(0, Number(pricingDraft.annualPrice) || 0),
+        annualNote: pricingDraft.annualNote.trim().slice(0, 160),
+      });
+    } finally {
+      setSavingPricing(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
+      {readOnly && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-950">
+          Modo Demo · Solo lectura: podés visualizar la estructura de personal y permisos sin crear, editar ni eliminar cuentas.
+        </div>
+      )}
       {/* KPI Summary Strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-xl border border-amber-200/80 bg-white p-4">
@@ -518,14 +560,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
-        >
-          <Plus className="h-4 w-4" />
-          Alta de Personal
-        </button>
+        {!readOnly ? (
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
+          >
+            <Plus className="h-4 w-4" />
+            Alta de Personal
+          </button>
+        ) : (
+          <span className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900">
+            Solo lectura
+          </span>
+        )}
       </div>
 
       {/* Staff Table */}
@@ -614,7 +662,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </td>
 
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {staff.role === 'super_admin' ? (
+                      {readOnly ? (
+                        <span className="text-[11px] text-stone-400">Protegida (Demo)</span>
+                      ) : staff.role === 'super_admin' ? (
                         <span className="text-[11px] text-stone-500">Cuenta Google</span>
                       ) : !canManageThisUser ? (
                         <span className="text-[11px] text-stone-400">Privada</span>
@@ -685,7 +735,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </td>
 
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      {canManageThisUser ? (
+                      {!readOnly && canManageThisUser ? (
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"
@@ -729,6 +779,161 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Super Admin App Pricing Management Card */}
+      {isSuperAdmin && !readOnly && pricingDraft && onSavePricing && (
+        <form
+          onSubmit={handlePricingSubmit}
+          className="rounded-xl border border-amber-200/80 bg-white p-5 space-y-4 text-xs"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-sm font-bold text-emerald-950">
+                  Precios de la App y Número de Pago
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Configurá los planes visibles en la pestaña «Precio de la App» para todos los locales.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingPricing}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <Save className="h-4 w-4" />
+              {savingPricing ? 'Guardando...' : 'Guardar tarifas'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block font-medium text-stone-700">Número oficial para pagos *</label>
+              <input
+                type="text"
+                required
+                maxLength={60}
+                value={pricingDraft.paymentPhone}
+                onChange={(e) =>
+                  setPricingDraft({ ...pricingDraft, paymentPhone: e.target.value })
+                }
+                placeholder="+595-975635770"
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium text-stone-700">Moneda *</label>
+              <input
+                type="text"
+                required
+                maxLength={12}
+                value={pricingDraft.currencySymbol}
+                onChange={(e) =>
+                  setPricingDraft({ ...pricingDraft, currencySymbol: e.target.value })
+                }
+                placeholder="Gs."
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium text-stone-700">Pago Mensual</label>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                required
+                value={pricingDraft.monthlyPrice}
+                onChange={(e) =>
+                  setPricingDraft({
+                    ...pricingDraft,
+                    monthlyPrice: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+            <div className="lg:col-span-3">
+              <label className="block font-medium text-stone-700">Descripción plan mensual</label>
+              <input
+                type="text"
+                maxLength={160}
+                value={pricingDraft.monthlyNote}
+                onChange={(e) =>
+                  setPricingDraft({ ...pricingDraft, monthlyNote: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium text-stone-700">Pago Semestral</label>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                required
+                value={pricingDraft.semiannualPrice}
+                onChange={(e) =>
+                  setPricingDraft({
+                    ...pricingDraft,
+                    semiannualPrice: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+            <div className="lg:col-span-3">
+              <label className="block font-medium text-stone-700">Descripción plan semestral</label>
+              <input
+                type="text"
+                maxLength={160}
+                value={pricingDraft.semiannualNote}
+                onChange={(e) =>
+                  setPricingDraft({ ...pricingDraft, semiannualNote: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-medium text-stone-700">Pago Anual</label>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                required
+                value={pricingDraft.annualPrice}
+                onChange={(e) =>
+                  setPricingDraft({
+                    ...pricingDraft,
+                    annualPrice: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+            <div className="lg:col-span-3">
+              <label className="block font-medium text-stone-700">Descripción plan anual</label>
+              <input
+                type="text"
+                maxLength={160}
+                value={pricingDraft.annualNote}
+                onChange={(e) =>
+                  setPricingDraft({ ...pricingDraft, annualNote: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        </form>
+      )}
 
       {/* Create Staff Modal via Portal so top banner never overlaps it */}
       {createOpen &&

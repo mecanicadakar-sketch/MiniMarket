@@ -238,6 +238,8 @@ service cloud.firestore {
           'minStock',
           'expiryDate',
           'batchCode',
+          'supplierId',
+          'supplierName',
           'updatedByUid',
           'createdAt',
           'updatedAt'
@@ -256,8 +258,92 @@ service cloud.firestore {
         && data.minStock is number && data.minStock >= 0
         && (!('expiryDate' in data) || (data.expiryDate is string && data.expiryDate.size() <= 20))
         && (!('batchCode' in data) || (data.batchCode is string && data.batchCode.size() <= 40))
+        && (!('supplierId' in data) || (data.supplierId is string && data.supplierId.size() <= 128))
+        && (!('supplierName' in data) || (data.supplierName is string && data.supplierName.size() <= 120))
         && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
         && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSupplier(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'storeId',
+          'name',
+          'updatedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'storeId',
+          'name',
+          'taxId',
+          'contactName',
+          'phone',
+          'email',
+          'address',
+          'category',
+          'notes',
+          'updatedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidStoreId(data.storeId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && (!('taxId' in data) || (data.taxId is string && data.taxId.size() <= 40))
+        && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 120))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 60))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 160))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 200))
+        && (!('category' in data) || (data.category is string && data.category.size() <= 60))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAppPricing(data) {
+      return data is map
+        && data.keys().hasAll([
+          'id',
+          'paymentPhone',
+          'currencySymbol',
+          'monthlyPrice',
+          'monthlyNote',
+          'semiannualPrice',
+          'semiannualNote',
+          'annualPrice',
+          'annualNote',
+          'updatedByUid',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'paymentPhone',
+          'currencySymbol',
+          'monthlyPrice',
+          'monthlyNote',
+          'semiannualPrice',
+          'semiannualNote',
+          'annualPrice',
+          'annualNote',
+          'updatedByUid',
+          'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == 'pricing'
+        && data.paymentPhone is string && data.paymentPhone.size() >= 1 && data.paymentPhone.size() <= 60
+        && data.currencySymbol is string && data.currencySymbol.size() >= 1 && data.currencySymbol.size() <= 12
+        && data.monthlyPrice is number && data.monthlyPrice >= 0
+        && data.monthlyNote is string && data.monthlyNote.size() <= 160
+        && data.semiannualPrice is number && data.semiannualPrice >= 0
+        && data.semiannualNote is string && data.semiannualNote.size() <= 160
+        && data.annualPrice is number && data.annualPrice >= 0
+        && data.annualNote is string && data.annualNote.size() <= 160
+        && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128
         && data.updatedAt is timestamp;
     }
 
@@ -645,13 +731,49 @@ service cloud.firestore {
           (hasPermission('manageInventory')
             && incoming().diff(existing()).affectedKeys().hasOnly([
               'barcode', 'sku', 'name', 'category', 'unit', 'costPrice', 'salePrice',
-              'taxRate', 'stock', 'minStock', 'expiryDate', 'batchCode', 'updatedByUid', 'updatedAt'
+              'taxRate', 'stock', 'minStock', 'expiryDate', 'batchCode',
+              'supplierId', 'supplierName', 'updatedByUid', 'updatedAt'
             ]))
           || ((hasPermission('operatePos') || hasPermission('voidSales'))
               && incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedByUid', 'updatedAt']))
         );
 
       allow delete: if isValidId(productId)
+        && hasPermission('manageInventory')
+        && canAccessStore(existing().storeId);
+    }
+
+    // --- Suppliers (Isolated per Store / Manager) ---
+    match /suppliers/{supplierId} {
+      allow get: if isValidId(supplierId)
+        && canAccessStore(existing().storeId)
+        && (hasPermission('viewInventory') || hasPermission('manageInventory'));
+      allow list: if isAuthorizedStaffOrAdmin() && resource.data.storeId == userStoreId();
+
+      allow create: if isValidId(supplierId)
+        && hasPermission('manageInventory')
+        && isValidSupplier(incoming())
+        && incoming().id == supplierId
+        && canAccessStore(incoming().storeId)
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(supplierId)
+        && isValidSupplier(incoming())
+        && hasPermission('manageInventory')
+        && canAccessStore(existing().storeId)
+        && incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'taxId', 'contactName', 'phone', 'email', 'address',
+          'category', 'notes', 'updatedByUid', 'updatedAt'
+        ]);
+
+      allow delete: if isValidId(supplierId)
         && hasPermission('manageInventory')
         && canAccessStore(existing().storeId);
     }
@@ -808,6 +930,41 @@ service cloud.firestore {
         );
 
       allow delete: if isValidId(settingId) && isSuperAdmin() && existing().storeId == 'minimarket-principal';
+    }
+
+    // --- Public App Pricing & Payment Info (Super Admin writable only) ---
+    match /appConfig/{configId} {
+      allow get: if isValidId(configId) && configId == 'pricing';
+      allow list: if false;
+
+      allow create: if isValidId(configId)
+        && configId == 'pricing'
+        && isSuperAdmin()
+        && isValidAppPricing(incoming())
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(configId)
+        && configId == 'pricing'
+        && isSuperAdmin()
+        && isValidAppPricing(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'paymentPhone',
+          'currencySymbol',
+          'monthlyPrice',
+          'monthlyNote',
+          'semiannualPrice',
+          'semiannualNote',
+          'annualPrice',
+          'annualNote',
+          'updatedByUid',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
     }
   }
 }

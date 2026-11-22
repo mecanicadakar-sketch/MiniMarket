@@ -19,6 +19,7 @@ import {
   ProductUnit,
   StockMovement,
   StoreSettings,
+  Supplier,
 } from '../types/pos';
 import {
   downloadCsv,
@@ -33,6 +34,7 @@ import {
 interface InventoryManagerProps {
   products: Product[];
   categories: string[];
+  suppliers: Supplier[];
   stockMovements: StockMovement[];
   store: StoreSettings;
   canManageInventory?: boolean;
@@ -47,6 +49,7 @@ interface InventoryManagerProps {
     newBatchCode?: string;
   }) => void;
   onSaveCategories: (nextCategories: string[]) => Promise<void> | void;
+  onQuickCreateSupplier?: (name: string) => Promise<Supplier | null>;
 }
 
 type InventoryFilter = 'all' | 'low_stock' | 'expiring' | 'weighed';
@@ -54,6 +57,7 @@ type InventoryFilter = 'all' | 'low_stock' | 'expiring' | 'weighed';
 export const InventoryManager: React.FC<InventoryManagerProps> = ({
   products,
   categories,
+  suppliers,
   stockMovements,
   store,
   canManageInventory = true,
@@ -61,6 +65,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   onDeleteProduct,
   onAdjustStock,
   onSaveCategories,
+  onQuickCreateSupplier,
 }) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<InventoryFilter>('all');
@@ -71,6 +76,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [isNewProduct, setIsNewProduct] = useState(false);
   const [addingInlineCategory, setAddingInlineCategory] = useState(false);
   const [inlineCategoryName, setInlineCategoryName] = useState('');
+  const [addingInlineSupplier, setAddingInlineSupplier] = useState(false);
+  const [inlineSupplierName, setInlineSupplierName] = useState('');
+  const [savingInlineSupplier, setSavingInlineSupplier] = useState(false);
 
   // Categories manager modal state
   const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
@@ -125,7 +133,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         p.name.toLowerCase().includes(q) ||
         p.barcode.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
+        p.category.toLowerCase().includes(q) ||
+        (p.supplierName || '').toLowerCase().includes(q)
       );
     });
   }, [products, filter, search]);
@@ -139,10 +148,48 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     return clean;
   };
 
+  const handleQuickAddSupplier = async () => {
+    const clean = inlineSupplierName.trim().slice(0, 120);
+    if (!clean || !editingProduct) return;
+    const existing = suppliers.find((s) => s.name.toLowerCase() === clean.toLowerCase());
+    if (existing) {
+      setEditingProduct({
+        ...editingProduct,
+        supplierId: existing.id,
+        supplierName: existing.name,
+      });
+      setAddingInlineSupplier(false);
+      setInlineSupplierName('');
+      return;
+    }
+    if (!onQuickCreateSupplier) return;
+    setSavingInlineSupplier(true);
+    try {
+      const created = await onQuickCreateSupplier(clean);
+      if (created) {
+        setEditingProduct((prev) =>
+          prev
+            ? {
+                ...prev,
+                supplierId: created.id,
+                supplierName: created.name,
+              }
+            : prev
+        );
+      }
+      setAddingInlineSupplier(false);
+      setInlineSupplierName('');
+    } finally {
+      setSavingInlineSupplier(false);
+    }
+  };
+
   const openNewModal = () => {
     setIsNewProduct(true);
     setAddingInlineCategory(false);
     setInlineCategoryName('');
+    setAddingInlineSupplier(false);
+    setInlineSupplierName('');
     setEditingProduct({
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       barcode: generateEan13(),
@@ -157,6 +204,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       minStock: 5,
       expiryDate: '',
       batchCode: '',
+      supplierId: '',
+      supplierName: '',
     });
   };
 
@@ -164,8 +213,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setIsNewProduct(false);
     setAddingInlineCategory(false);
     setInlineCategoryName('');
+    setAddingInlineSupplier(false);
+    setInlineSupplierName('');
     setEditingProduct({
       ...product,
+      supplierId: product.supplierId || '',
+      supplierName: product.supplierName || '',
       taxRate:
         product.taxRate === 0
           ? 0
@@ -187,6 +240,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct || !editingProduct.name.trim()) return;
+    const matchedSup = editingProduct.supplierId
+      ? suppliers.find((s) => s.id === editingProduct.supplierId)
+      : undefined;
+    const cleanSupplierId = editingProduct.supplierId?.trim() || undefined;
+    const cleanSupplierName =
+      (matchedSup?.name || editingProduct.supplierName || '').trim() || undefined;
+
     onSaveProduct(
       {
         ...editingProduct,
@@ -195,6 +255,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         sku: editingProduct.sku.trim() || 'SKU-000',
         expiryDate: editingProduct.expiryDate || undefined,
         batchCode: editingProduct.batchCode?.trim() || undefined,
+        supplierId: cleanSupplierId,
+        supplierName: cleanSupplierName,
       },
       isNewProduct
     );
@@ -233,6 +295,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         'Código de Barras',
         'Producto',
         'Categoría',
+        'Proveedor',
         'Unidad',
         'Costo',
         'Precio Venta',
@@ -246,6 +309,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         p.barcode,
         p.name,
         p.category,
+        p.supplierName || '',
         p.unit,
         p.costPrice,
         p.salePrice,
@@ -313,7 +377,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, EAN o SKU..."
+              placeholder="Buscar por nombre, EAN, SKU o proveedor..."
               className="w-full rounded-lg border border-stone-200 bg-amber-50/30 py-1.5 pl-9 pr-3 text-xs text-stone-900 focus:border-orange-500 focus:bg-white focus:outline-none"
             />
           </div>
@@ -516,6 +580,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                           <div className="text-[11px] text-slate-500">
                             {p.category} · IVA {p.taxRate}% ·{' '}
                             {p.unit === 'kg' ? 'Venta por peso' : 'Por unidad'}
+                            {p.supplierName ? (
+                              <span className="font-medium text-emerald-800">
+                                {' '}
+                                · Prov: {p.supplierName}
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-slate-600 tabular-nums">
@@ -619,290 +689,369 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         </div>
       )}
 
-      {/* Create / Edit Product Modal */}
-      {editingProduct && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label={isNewProduct ? 'Nuevo producto' : 'Editar producto'}
-        >
-          <form
-            onSubmit={handleSaveForm}
-            className="w-full max-w-lg rounded-xl border border-amber-200 bg-white shadow-xl"
+      {/* Create / Edit Product Modal via Portal */}
+      {editingProduct &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isNewProduct ? 'Nuevo producto' : 'Editar producto'}
           >
-            <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
-              <h3 className="font-display text-base font-semibold text-emerald-950">
-                {isNewProduct ? 'Alta de producto' : 'Editar producto'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingProduct(null)}
-                className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5 p-5 text-xs">
-              <div className="col-span-2">
-                <label className="block font-medium text-stone-700">Nombre del producto</label>
-                <input
-                  type="text"
-                  required
-                  value={editingProduct.name}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, name: e.target.value })
-                  }
-                  placeholder="Ej: Aceite Oliva Extra Virgen 500 ml"
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
-                />
+            <form
+              onSubmit={handleSaveForm}
+              className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-xl"
+            >
+              <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/40 px-5 py-3.5">
+                <h3 className="font-display text-base font-semibold text-emerald-950">
+                  {isNewProduct ? 'Alta de producto' : 'Editar producto'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="rounded-lg p-1.5 text-stone-400 hover:bg-amber-100/70 hover:text-stone-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div>
-                <label className="block font-medium text-stone-700">Código de barras (EAN)</label>
-                <div className="mt-1 flex gap-1">
+              <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-3.5 p-5 text-xs">
+                <div className="col-span-2">
+                  <label className="block font-medium text-stone-700">Nombre del producto</label>
                   <input
                     type="text"
                     required
-                    value={editingProduct.barcode}
+                    value={editingProduct.name}
                     onChange={(e) =>
-                      setEditingProduct({ ...editingProduct, barcode: e.target.value })
+                      setEditingProduct({ ...editingProduct, name: e.target.value })
                     }
-                    className="w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                    placeholder="Ej: Aceite Oliva Extra Virgen 500 ml"
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-orange-500 focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditingProduct({ ...editingProduct, barcode: generateEan13() })
-                    }
-                    className="whitespace-nowrap shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-orange-700 hover:bg-amber-100"
-                  >
-                    Generar
-                  </button>
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-stone-700">SKU interno</label>
-                <input
-                  type="text"
-                  value={editingProduct.sku}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, sku: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <label className="block font-medium text-stone-700">Categoría</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddingInlineCategory((v) => !v);
-                      setInlineCategoryName('');
-                    }}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {addingInlineCategory ? 'Cancelar' : 'Nueva categoría'}
-                  </button>
-                </div>
-                {addingInlineCategory ? (
-                  <div className="mt-1 flex gap-1.5">
+                <div>
+                  <label className="block font-medium text-stone-700">Código de barras (EAN)</label>
+                  <div className="mt-1 flex gap-1">
                     <input
                       type="text"
-                      maxLength={40}
-                      value={inlineCategoryName}
-                      onChange={(e) => setInlineCategoryName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
+                      required
+                      value={editingProduct.barcode}
+                      onChange={(e) =>
+                        setEditingProduct({ ...editingProduct, barcode: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingProduct({ ...editingProduct, barcode: generateEan13() })
+                      }
+                      className="whitespace-nowrap shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-orange-700 hover:bg-amber-100"
+                    >
+                      Generar
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">SKU interno</label>
+                  <input
+                    type="text"
+                    value={editingProduct.sku}
+                    onChange={(e) =>
+                      setEditingProduct({ ...editingProduct, sku: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block font-medium text-stone-700">Categoría</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingInlineCategory((v) => !v);
+                        setInlineCategoryName('');
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700"
+                    >
+                      <Plus className="h-3 w-3" />
+                      {addingInlineCategory ? 'Cancelar' : 'Nueva categoría'}
+                    </button>
+                  </div>
+                  {addingInlineCategory ? (
+                    <div className="mt-1 flex gap-1.5">
+                      <input
+                        type="text"
+                        maxLength={40}
+                        value={inlineCategoryName}
+                        onChange={(e) => setInlineCategoryName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const added = addCategoryItem(inlineCategoryName);
+                            if (added) {
+                              setEditingProduct({ ...editingProduct, category: added });
+                              setAddingInlineCategory(false);
+                              setInlineCategoryName('');
+                            }
+                          }
+                        }}
+                        placeholder="Ej: Ferretería, Tienda, Electrónica"
+                        className="flex-1 rounded-lg border border-orange-300 px-2.5 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
                           const added = addCategoryItem(inlineCategoryName);
                           if (added) {
                             setEditingProduct({ ...editingProduct, category: added });
                             setAddingInlineCategory(false);
                             setInlineCategoryName('');
                           }
-                        }
-                      }}
-                      placeholder="Ej: Ferretería, Tienda, Electrónica"
-                      className="flex-1 rounded-lg border border-orange-300 px-2.5 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const added = addCategoryItem(inlineCategoryName);
-                        if (added) {
-                          setEditingProduct({ ...editingProduct, category: added });
-                          setAddingInlineCategory(false);
-                          setInlineCategoryName('');
-                        }
-                      }}
-                      className="whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                        }}
+                        className="whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={editingProduct.category}
+                      onChange={(e) =>
+                        setEditingProduct({
+                          ...editingProduct,
+                          category: e.target.value as ProductCategory,
+                        })
+                      }
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                     >
-                      Agregar
-                    </button>
-                  </div>
-                ) : (
+                      {Array.from(new Set([...categories, editingProduct.category].filter(Boolean))).map(
+                        (c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Unidad de venta</label>
                   <select
-                    value={editingProduct.category}
+                    value={editingProduct.unit}
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        category: e.target.value as ProductCategory,
+                        unit: e.target.value as ProductUnit,
                       })
                     }
                     className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
                   >
-                    {Array.from(new Set([...categories, editingProduct.category].filter(Boolean))).map(
-                      (c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      )
-                    )}
+                    <option value="u">Unidad (código barras)</option>
+                    <option value="kg">Kilogramo (balanza)</option>
                   </select>
-                )}
+                </div>
+
+                {/* Supplier selection + quick inline create */}
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block font-medium text-stone-700">Proveedor del producto</label>
+                    {onQuickCreateSupplier && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingInlineSupplier((v) => !v);
+                          setInlineSupplierName('');
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {addingInlineSupplier ? 'Cancelar' : 'Nuevo proveedor'}
+                      </button>
+                    )}
+                  </div>
+                  {addingInlineSupplier ? (
+                    <div className="mt-1 flex gap-1.5">
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={inlineSupplierName}
+                        onChange={(e) => setInlineSupplierName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleQuickAddSupplier();
+                          }
+                        }}
+                        placeholder="Nombre o razón social del proveedor"
+                        className="flex-1 rounded-lg border border-orange-300 px-2.5 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        disabled={savingInlineSupplier || !inlineSupplierName.trim()}
+                        onClick={() => void handleQuickAddSupplier()}
+                        className="whitespace-nowrap shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {savingInlineSupplier ? 'Guardando...' : 'Agregar'}
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={editingProduct.supplierId || ''}
+                      onChange={(e) => {
+                        const supId = e.target.value;
+                        const sup = suppliers.find((s) => s.id === supId);
+                        setEditingProduct({
+                          ...editingProduct,
+                          supplierId: supId,
+                          supplierName: sup?.name || '',
+                        });
+                      }}
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                    >
+                      <option value="">Sin proveedor asignado</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                          {s.taxId ? ` (RUC ${s.taxId})` : ''}
+                        </option>
+                      ))}
+                      {editingProduct.supplierId &&
+                        !suppliers.some((s) => s.id === editingProduct.supplierId) &&
+                        editingProduct.supplierName && (
+                          <option value={editingProduct.supplierId}>
+                            {editingProduct.supplierName}
+                          </option>
+                        )}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Precio de costo</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editingProduct.costPrice}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        costPrice: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Precio de venta</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={editingProduct.salePrice}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        salePrice: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs font-semibold text-emerald-950 tabular-nums focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Stock actual</label>
+                  <input
+                    type="number"
+                    step={editingProduct.unit === 'kg' ? '0.01' : '1'}
+                    value={editingProduct.stock}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        stock: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Stock mínimo (alerta)</label>
+                  <input
+                    type="number"
+                    step={editingProduct.unit === 'kg' ? '0.1' : '1'}
+                    min="0"
+                    value={editingProduct.minStock}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        minStock: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Fecha de vencimiento</label>
+                  <input
+                    type="date"
+                    value={editingProduct.expiryDate || ''}
+                    onChange={(e) =>
+                      setEditingProduct({ ...editingProduct, expiryDate: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-stone-700">Alícuota IVA (%)</label>
+                  <select
+                    value={editingProduct.taxRate}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        taxRate: Number(e.target.value),
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value={10}>10% (Tasa general)</option>
+                    <option value={5}>5% (Tasa reducida · Canasta familiar)</option>
+                    <option value={0}>0% (Exenta)</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block font-medium text-stone-700">Unidad de venta</label>
-                <select
-                  value={editingProduct.unit}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      unit: e.target.value as ProductUnit,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+              <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
                 >
-                  <option value="u">Unidad (código barras)</option>
-                  <option value="kg">Kilogramo (balanza)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Precio de costo</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editingProduct.costPrice}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      costPrice: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Precio de venta</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  value={editingProduct.salePrice}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      salePrice: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs font-semibold text-emerald-950 tabular-nums focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Stock actual</label>
-                <input
-                  type="number"
-                  step={editingProduct.unit === 'kg' ? '0.01' : '1'}
-                  value={editingProduct.stock}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      stock: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Stock mínimo (alerta)</label>
-                <input
-                  type="number"
-                  step={editingProduct.unit === 'kg' ? '0.1' : '1'}
-                  min="0"
-                  value={editingProduct.minStock}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      minStock: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 tabular-nums focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Fecha de vencimiento</label>
-                <input
-                  type="date"
-                  value={editingProduct.expiryDate || ''}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, expiryDate: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-stone-700">Alícuota IVA (%)</label>
-                <select
-                  value={editingProduct.taxRate}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      taxRate: Number(e.target.value),
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
                 >
-                  <option value={10}>10% (Tasa general)</option>
-                  <option value={5}>5% (Tasa reducida · Canasta familiar)</option>
-                  <option value={0}>0% (Exenta)</option>
-                </select>
+                  {isNewProduct ? 'Guardar Producto' : 'Actualizar Producto'}
+                </button>
               </div>
-            </div>
-
-            <div className="flex justify-end gap-2.5 border-t border-amber-100 bg-amber-50/30 px-5 py-3.5">
-              <button
-                type="button"
-                onClick={() => setEditingProduct(null)}
-                className="rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
-              >
-                {isNewProduct ? 'Guardar Producto' : 'Actualizar Producto'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            </form>
+          </div>,
+          document.body
+        )}
 
       {/* Stock Adjustment / Restock Modal */}
       {adjustingProduct && (

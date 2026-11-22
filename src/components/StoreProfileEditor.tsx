@@ -5,10 +5,15 @@ import { compressImageToDataUrl, fitTopBannerToDataUrl } from '../utils/image';
 
 interface StoreProfileEditorProps {
   store: StoreSettings;
+  readOnly?: boolean;
   onSaveStore: (next: StoreSettings) => Promise<void>;
 }
 
-export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, onSaveStore }) => {
+export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({
+  store,
+  readOnly = false,
+  onSaveStore,
+}) => {
   const [draft, setDraft] = useState<StoreSettings>(store);
   const [saving, setSaving] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -59,6 +64,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return;
     setFormError(null);
 
     const storeName = draft.storeName.trim();
@@ -165,29 +171,37 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
           </div>
 
           <div className="flex items-center gap-2.5">
-            {isDirty && (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => {
-                  setDraft(store);
-                  setImageError(null);
-                  setFormError(null);
-                }}
-                className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Descartar
-              </button>
+            {readOnly ? (
+              <span className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900">
+                Modo Demo · Solo lectura
+              </span>
+            ) : (
+              <>
+                {isDirty && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      setDraft(store);
+                      setImageError(null);
+                      setFormError(null);
+                    }}
+                    className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-amber-50"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Descartar
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {saving ? 'Guardando...' : 'Guardar datos del comercio'}
+                </button>
+              </>
             )}
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? 'Guardando...' : 'Guardar datos del comercio'}
-            </button>
           </div>
         </div>
       </div>
@@ -210,7 +224,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
                 Se muestra en el encabezado superior y en la cabecera de tickets y facturas impresas.
               </p>
             </div>
-            {draft.logoUrl && (
+            {!readOnly && draft.logoUrl && (
               <button
                 type="button"
                 onClick={() => setDraft((prev) => ({ ...prev, logoUrl: '' }))}
@@ -237,23 +251,27 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
             )}
 
             <div className="flex-1 space-y-2">
-              <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-800 hover:bg-orange-100">
-                <ImagePlus className="h-4 w-4" />
-                Subir imagen desde archivo
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleImageUpload(e, 'logoUrl')}
-                  className="hidden"
-                />
-              </label>
+              {!readOnly && (
+                <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-800 hover:bg-orange-100">
+                  <ImagePlus className="h-4 w-4" />
+                  Subir imagen desde archivo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={readOnly}
+                    onChange={(e) => handleImageUpload(e, 'logoUrl')}
+                    className="hidden"
+                  />
+                </label>
+              )}
               <div>
                 <input
                   type="url"
+                  disabled={readOnly}
                   value={draft.logoUrl?.startsWith('data:') ? '' : draft.logoUrl || ''}
                   onChange={(e) => setDraft((prev) => ({ ...prev, logoUrl: e.target.value }))}
                   placeholder="O pegá la URL de una imagen (https://...)"
-                  className="w-full rounded-lg border border-stone-300 px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none disabled:bg-stone-50 disabled:text-stone-500"
                 />
               </div>
             </div>
@@ -270,7 +288,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
                 Fotografía del local o banner institucional para identificar tu sucursal.
               </p>
             </div>
-            {draft.bannerUrl && (
+            {!readOnly && draft.bannerUrl && (
               <button
                 type="button"
                 onClick={() => setDraft((prev) => ({ ...prev, bannerUrl: '' }))}
@@ -296,23 +314,27 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
             </div>
 
             <div className="flex-1 space-y-2">
-              <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-800 hover:bg-orange-100">
-                <ImagePlus className="h-4 w-4" />
-                Subir foto del local
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleImageUpload(e, 'bannerUrl')}
-                  className="hidden"
-                />
-              </label>
+              {!readOnly && (
+                <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-800 hover:bg-orange-100">
+                  <ImagePlus className="h-4 w-4" />
+                  Subir foto del local
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={readOnly}
+                    onChange={(e) => handleImageUpload(e, 'bannerUrl')}
+                    className="hidden"
+                  />
+                </label>
+              )}
               <div>
                 <input
                   type="url"
+                  disabled={readOnly}
                   value={draft.bannerUrl?.startsWith('data:') ? '' : draft.bannerUrl || ''}
                   onChange={(e) => setDraft((prev) => ({ ...prev, bannerUrl: e.target.value }))}
                   placeholder="O pegá la URL de una imagen (https://...)"
-                  className="w-full rounded-lg border border-stone-300 px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none disabled:bg-stone-50 disabled:text-stone-500"
                 />
               </div>
             </div>
@@ -332,7 +354,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
                 <span className="font-mono font-semibold text-emerald-900">820 × 160 px</span>).
               </p>
             </div>
-            {draft.topBannerUrl && (
+            {!readOnly && draft.topBannerUrl && (
               <button
                 type="button"
                 onClick={() => setDraft((prev) => ({ ...prev, topBannerUrl: '' }))}
@@ -363,29 +385,33 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-800 hover:bg-orange-100">
-              <ImagePlus className="h-4 w-4" />
-              Cargar imagen de banner
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleImageUpload(e, 'topBannerUrl')}
-                className="hidden"
-              />
-            </label>
+            {!readOnly && (
+              <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-800 hover:bg-orange-100">
+                <ImagePlus className="h-4 w-4" />
+                Cargar imagen de banner
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={readOnly}
+                  onChange={(e) => handleImageUpload(e, 'topBannerUrl')}
+                  className="hidden"
+                />
+              </label>
+            )}
             <input
               type="url"
+              disabled={readOnly}
               value={draft.topBannerUrl?.startsWith('data:') ? '' : draft.topBannerUrl || ''}
               onChange={(e) => setDraft((prev) => ({ ...prev, topBannerUrl: e.target.value }))}
               placeholder="O pegá la URL de la imagen del banner (https://...)"
-              className="min-w-[240px] flex-1 rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none"
+              className="min-w-[240px] flex-1 rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none disabled:bg-stone-50 disabled:text-stone-500"
             />
           </div>
         </div>
       </div>
 
       {/* Store General & Fiscal Info */}
-      <div className="rounded-xl border border-amber-200/80 bg-white p-5">
+      <fieldset disabled={readOnly} className="rounded-xl border border-amber-200/80 bg-white p-5 disabled:opacity-80">
         <h3 className="font-display text-sm font-semibold text-emerald-950">
           Información general, fiscal y de comprobantes
         </h3>
@@ -475,7 +501,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({ store, o
             />
           </div>
         </div>
-      </div>
+      </fieldset>
     </form>
   );
 };

@@ -1,4 +1,5 @@
 import {
+  AppPricingConfig,
   CashMovement,
   HardwareConfig,
   Product,
@@ -6,6 +7,7 @@ import {
   Shift,
   StockMovement,
   StoreSettings,
+  Supplier,
 } from '../types/pos';
 
 function offsetDate(daysFromToday: number): string {
@@ -27,6 +29,61 @@ export const DEFAULT_PRODUCT_CATEGORIES: string[] = [
   'Panadería',
   'Fiambrería',
   'Limpieza',
+];
+
+export const INITIAL_PRICING_CONFIG: AppPricingConfig = {
+  paymentPhone: '+595-975635770',
+  currencySymbol: 'Gs.',
+  monthlyPrice: 100000,
+  monthlyNote: 'Acceso mensual completo al sistema POS e inventario',
+  semiannualPrice: 500000,
+  semiannualNote: '1 mes gratis incluido (6 meses de servicio)',
+  annualPrice: 1000000,
+  annualNote: '2 meses gratis incluidos (12 meses de servicio)',
+};
+
+export const INITIAL_SUPPLIERS: Supplier[] = [
+  {
+    id: 'sup-01',
+    name: 'Distribuidora Central S.A.',
+    taxId: '80019452-1',
+    contactName: 'Roberto Giménez',
+    phone: '+595-981-442-110',
+    email: 'pedidos@distribuidoracentral.com.py',
+    address: 'Ruta Transchaco Km 12, Mariano Roque Alonso',
+    category: 'Bebidas y Almacén',
+    notes: 'Entregas martes y viernes por la mañana.',
+  },
+  {
+    id: 'sup-02',
+    name: 'Lácteos & Fríos del Sur S.R.L.',
+    taxId: '80054120-7',
+    contactName: 'Patricia Villalba',
+    phone: '+595-971-330-890',
+    email: 'ventas@lacteosdelsur.com.py',
+    address: 'Av. Eusebio Ayala 3450, Asunción',
+    category: 'Lácteos y Fiambrería',
+    notes: 'Cadena de frío · Reposición cada 48 hs.',
+  },
+  {
+    id: 'sup-03',
+    name: 'Mercado Abasto Frutihortícola',
+    taxId: '80078214-5',
+    contactName: 'Julio Benítez',
+    phone: '+595-982-615-240',
+    address: 'Bloque C, Puesto 18, Mercado de Abasto',
+    category: 'Verdulería y Panificados',
+    notes: 'Pago contado contra entrega.',
+  },
+  {
+    id: 'sup-04',
+    name: 'Mayorista Limpieza Guaraní',
+    taxId: '80091234-9',
+    contactName: 'Sonia Acosta',
+    phone: '+595-991-708-512',
+    address: 'Av. Defensores del Chaco 920, San Lorenzo',
+    category: 'Limpieza',
+  },
 ];
 
 export const INITIAL_STORE_SETTINGS: StoreSettings = {
@@ -70,6 +127,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     minStock: 10,
     expiryDate: offsetDate(120),
     batchCode: 'L-2604',
+    supplierId: 'sup-01',
+    supplierName: 'Distribuidora Central S.A.',
   },
   {
     id: 'p-02',
@@ -85,6 +144,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     minStock: 12,
     expiryDate: offsetDate(6),
     batchCode: 'L-1129',
+    supplierId: 'sup-02',
+    supplierName: 'Lácteos & Fríos del Sur S.R.L.',
   },
   {
     id: 'p-03',
@@ -100,6 +161,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     minStock: 6,
     expiryDate: offsetDate(240),
     batchCode: 'L-8821',
+    supplierId: 'sup-01',
+    supplierName: 'Distribuidora Central S.A.',
   },
   {
     id: 'p-04',

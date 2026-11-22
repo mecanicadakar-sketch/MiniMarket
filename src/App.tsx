@@ -17,11 +17,13 @@ import {
 } from 'firebase/firestore';
 import {
   Cpu,
+  CreditCard,
   LogOut,
   Package,
   Receipt,
   ShoppingCart,
   Store,
+  Truck,
   Users,
   Vault,
 } from 'lucide-react';
@@ -31,18 +33,22 @@ import { HardwareCenter } from './components/HardwareCenter';
 import { InventoryManager } from './components/InventoryManager';
 import { LoginScreen } from './components/LoginScreen';
 import { PosTerminal } from './components/PosTerminal';
+import { PricingPanel } from './components/PricingPanel';
 import { ReceiptModal } from './components/ReceiptModal';
 import { SalesHistory } from './components/SalesHistory';
 import { StoreProfileEditor } from './components/StoreProfileEditor';
+import { SuppliersManager } from './components/SuppliersManager';
 import {
   DEFAULT_PRODUCT_CATEGORIES,
   INITIAL_CASH_MOVEMENTS,
   INITIAL_HARDWARE_CONFIG,
+  INITIAL_PRICING_CONFIG,
   INITIAL_PRODUCTS,
   INITIAL_SALES,
   INITIAL_SHIFT,
   INITIAL_STOCK_MOVEMENTS,
   INITIAL_STORE_SETTINGS,
+  INITIAL_SUPPLIERS,
 } from './data/initialData';
 import {
   OperationType,
@@ -63,6 +69,7 @@ import {
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import {
   ActiveTab,
+  AppPricingConfig,
   CartItem,
   CashMovement,
   CustomerInfo,
@@ -77,6 +84,7 @@ import {
   StaffProfile,
   StockMovement,
   StoreSettings,
+  Supplier,
 } from './types/pos';
 import { formatCurrency, getExpiryStatus, getStockStatus } from './utils/format';
 import {
@@ -102,6 +110,102 @@ const SUPER_ADMIN_PERMS: StaffPermissions = {
   manageCashiers: true,
   manageManagers: true,
 };
+
+const DEMO_USER_PROFILE: StaffProfile = {
+  uid: 'demo-user',
+  username: 'demo',
+  email: 'demo@minimarket.local',
+  fullName: 'Usuario Demo',
+  role: 'manager',
+  jobTitle: 'Visitante Demo (Solo lectura)',
+  active: true,
+  permissions: {
+    operatePos: true,
+    applyDiscounts: false,
+    voidSales: false,
+    manageCash: false,
+    viewInventory: true,
+    manageInventory: false,
+    manageHardware: true,
+    manageCashiers: true,
+    manageManagers: false,
+  },
+  createdByUid: 'demo',
+  createdByRole: 'super_admin',
+};
+
+const DEMO_STAFF_PREVIEW: StaffProfile[] = [
+  {
+    uid: 'demo-admin',
+    username: 'admin.general',
+    email: 'admin@ejemplo.local',
+    fullName: 'Administrador General (Ejemplo)',
+    role: 'super_admin',
+    jobTitle: 'Administrador General',
+    active: true,
+    permissions: SUPER_ADMIN_PERMS,
+    createdByUid: 'demo-admin',
+    createdByRole: 'super_admin',
+  },
+  {
+    uid: 'demo-user',
+    username: 'demo',
+    email: 'demo@minimarket.local',
+    fullName: 'Carlos Méndez (Ejemplo)',
+    role: 'manager',
+    jobTitle: 'Gerente de Sucursal',
+    active: true,
+    permissions: DEMO_USER_PROFILE.permissions,
+    createdByUid: 'demo-admin',
+    createdByRole: 'super_admin',
+  },
+  {
+    uid: 'demo-cashier',
+    username: 'lucia.caja',
+    email: 'lucia@ejemplo.local',
+    fullName: 'Lucía Fernández (Ejemplo)',
+    role: 'cashier',
+    jobTitle: 'Personal de Caja',
+    active: true,
+    assignedManagerUid: 'demo-user',
+    permissions: {
+      operatePos: true,
+      applyDiscounts: false,
+      voidSales: false,
+      manageCash: true,
+      viewInventory: true,
+      manageInventory: false,
+      manageHardware: false,
+      manageCashiers: false,
+      manageManagers: false,
+    },
+    createdByUid: 'demo-user',
+    createdByRole: 'manager',
+  },
+  {
+    uid: 'demo-warehouse',
+    username: 'mateo.stock',
+    email: 'mateo@ejemplo.local',
+    fullName: 'Mateo Rojas (Ejemplo)',
+    role: 'warehouse',
+    jobTitle: 'Depositero / Stock',
+    active: true,
+    assignedManagerUid: 'demo-user',
+    permissions: {
+      operatePos: false,
+      applyDiscounts: false,
+      voidSales: false,
+      manageCash: false,
+      viewInventory: true,
+      manageInventory: true,
+      manageHardware: false,
+      manageCashiers: false,
+      manageManagers: false,
+    },
+    createdByUid: 'demo-user',
+    createdByRole: 'manager',
+  },
+];
 
 function serializeProductDoc(
   p: Product,
@@ -134,6 +238,34 @@ function serializeProductDoc(
   if (p.batchCode) {
     payload.batchCode = p.batchCode.slice(0, 40);
   }
+  payload.supplierId = (p.supplierId || '').trim().slice(0, 128);
+  payload.supplierName = (p.supplierName || '').trim().slice(0, 120);
+  return payload;
+}
+
+function serializeSupplierDoc(
+  s: Supplier,
+  updatedByUid: string,
+  includeCreatedAt: boolean,
+  storeId: string
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    id: s.id,
+    storeId,
+    name: s.name.trim().slice(0, 120),
+    taxId: (s.taxId || '').trim().slice(0, 40),
+    contactName: (s.contactName || '').trim().slice(0, 120),
+    phone: (s.phone || '').trim().slice(0, 60),
+    email: (s.email || '').trim().slice(0, 160),
+    address: (s.address || '').trim().slice(0, 200),
+    category: (s.category || '').trim().slice(0, 60),
+    notes: (s.notes || '').trim().slice(0, 300),
+    updatedByUid,
+    updatedAt: serverTimestamp(),
+  };
+  if (includeCreatedAt) {
+    payload.createdAt = serverTimestamp();
+  }
   return payload;
 }
 
@@ -159,8 +291,10 @@ export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [currentUser, setCurrentUser] = useState<StaffProfile | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
@@ -170,6 +304,7 @@ export default function App() {
   const [store, setStore] = useState<StoreSettings>(INITIAL_STORE_SETTINGS);
   const [customCategories, setCustomCategories] = useState<string[]>(DEFAULT_PRODUCT_CATEGORIES);
   const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig>(INITIAL_HARDWARE_CONFIG);
+  const [appPricing, setAppPricing] = useState<AppPricingConfig>(INITIAL_PRICING_CONFIG);
   const [nextTicketSeq, setNextTicketSeq] = useState<number>(145);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('pos');
@@ -192,6 +327,7 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const seededRef = useRef<boolean>(false);
   const taxMigratedRef = useRef<boolean>(false);
+  const demoModeRef = useRef<boolean>(false);
 
   const showToast = useCallback((message: string, tone: 'ok' | 'warn' | 'err' = 'ok') => {
     setToast({ message, tone });
@@ -201,9 +337,92 @@ export default function App() {
     toastTimerRef.current = window.setTimeout(() => setToast(null), 3200);
   }, []);
 
-  // 1. Initial Firestore connectivity test
+  const enterDemoMode = useCallback(() => {
+    demoModeRef.current = true;
+    setIsDemoMode(true);
+    setAuthError(null);
+    setCurrentUser(DEMO_USER_PROFILE);
+    setProducts(INITIAL_PRODUCTS);
+    setSuppliers(INITIAL_SUPPLIERS);
+    setShifts([INITIAL_SHIFT]);
+    setSales(INITIAL_SALES);
+    setCashMovements(INITIAL_CASH_MOVEMENTS);
+    setStockMovements(INITIAL_STOCK_MOVEMENTS);
+    setStaffList(DEMO_STAFF_PREVIEW);
+    setStaffKeys({});
+    setStore(INITIAL_STORE_SETTINGS);
+    setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
+    setHardwareConfig(INITIAL_HARDWARE_CONFIG);
+    setCart([]);
+    setReceiptSale(null);
+    setActiveTab('pos');
+    showToast('Modo Demo activado (solo lectura). Podés explorar todos los paneles.', 'ok');
+  }, [showToast]);
+
+  const exitDemoMode = useCallback(() => {
+    demoModeRef.current = false;
+    setIsDemoMode(false);
+    setCurrentUser(null);
+    setProducts([]);
+    setSuppliers([]);
+    setShifts([]);
+    setSales([]);
+    setCashMovements([]);
+    setStockMovements([]);
+    setStaffList([]);
+    setStaffKeys({});
+    setStore(INITIAL_STORE_SETTINGS);
+    setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
+    setHardwareConfig(INITIAL_HARDWARE_CONFIG);
+    setCart([]);
+    setReceiptSale(null);
+  }, []);
+
+  // 1. Initial Firestore connectivity test + public pricing subscription
   useEffect(() => {
     testConnection();
+    const unsubPricing = onSnapshot(
+      doc(db, 'appConfig', 'pricing'),
+      (snap) => {
+        if (!snap.exists()) {
+          setAppPricing(INITIAL_PRICING_CONFIG);
+          return;
+        }
+        const raw = snap.data() as Partial<AppPricingConfig>;
+        setAppPricing({
+          paymentPhone: raw.paymentPhone || INITIAL_PRICING_CONFIG.paymentPhone,
+          currencySymbol: raw.currencySymbol || INITIAL_PRICING_CONFIG.currencySymbol,
+          monthlyPrice:
+            typeof raw.monthlyPrice === 'number'
+              ? raw.monthlyPrice
+              : INITIAL_PRICING_CONFIG.monthlyPrice,
+          monthlyNote:
+            typeof raw.monthlyNote === 'string'
+              ? raw.monthlyNote
+              : INITIAL_PRICING_CONFIG.monthlyNote,
+          semiannualPrice:
+            typeof raw.semiannualPrice === 'number'
+              ? raw.semiannualPrice
+              : INITIAL_PRICING_CONFIG.semiannualPrice,
+          semiannualNote:
+            typeof raw.semiannualNote === 'string'
+              ? raw.semiannualNote
+              : INITIAL_PRICING_CONFIG.semiannualNote,
+          annualPrice:
+            typeof raw.annualPrice === 'number'
+              ? raw.annualPrice
+              : INITIAL_PRICING_CONFIG.annualPrice,
+          annualNote:
+            typeof raw.annualNote === 'string'
+              ? raw.annualNote
+              : INITIAL_PRICING_CONFIG.annualNote,
+        });
+      },
+      () => {
+        // Fallback to defaults if unreachable before sign-in
+      }
+    );
+    return () => unsubPricing();
   }, []);
 
   // 2. Firebase Auth state + Staff Profile resolution
@@ -218,26 +437,31 @@ export default function App() {
 
       if (!user) {
         setFirebaseUser(null);
-        setCurrentUser(null);
-        setProducts([]);
-        setShifts([]);
-        setSales([]);
-        setCashMovements([]);
-        setStockMovements([]);
-        setStaffList([]);
-        setStaffKeys({});
-        setStore(INITIAL_STORE_SETTINGS);
-        setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
-        setHardwareConfig(INITIAL_HARDWARE_CONFIG);
-        setNextTicketSeq(1);
-        setCart([]);
-        setReceiptSale(null);
+        if (!demoModeRef.current) {
+          setCurrentUser(null);
+          setProducts([]);
+          setSuppliers([]);
+          setShifts([]);
+          setSales([]);
+          setCashMovements([]);
+          setStockMovements([]);
+          setStaffList([]);
+          setStaffKeys({});
+          setStore(INITIAL_STORE_SETTINGS);
+          setCustomCategories(DEFAULT_PRODUCT_CATEGORIES);
+          setHardwareConfig(INITIAL_HARDWARE_CONFIG);
+          setNextTicketSeq(1);
+          setCart([]);
+          setReceiptSale(null);
+        }
         seededRef.current = false;
         taxMigratedRef.current = false;
         setAuthReady(true);
         return;
       }
 
+      demoModeRef.current = false;
+      setIsDemoMode(false);
       setFirebaseUser(user);
       const isVerifiedSuperAdmin =
         user.emailVerified &&
@@ -309,15 +533,48 @@ export default function App() {
     };
   }, []);
 
-  // 3. Seed initial catalog & open shift once when Super Admin logs in to an empty DB
+  // 3. Seed initial catalog, suppliers & app pricing once when Super Admin logs in
   useEffect(() => {
-    if (!authReady || !currentUser || currentUser.role !== 'super_admin' || seededRef.current) {
+    if (
+      !authReady ||
+      !currentUser ||
+      isDemoMode ||
+      currentUser.role !== 'super_admin' ||
+      seededRef.current
+    ) {
       return;
     }
     seededRef.current = true;
 
     (async () => {
       try {
+        // Ensure App Pricing document exists
+        const pricingRef = doc(db, 'appConfig', 'pricing');
+        const pricingSnap = await getDoc(pricingRef);
+        if (!pricingSnap.exists()) {
+          await setDoc(pricingRef, {
+            id: 'pricing',
+            ...INITIAL_PRICING_CONFIG,
+            updatedByUid: currentUser.uid,
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        // Ensure initial suppliers exist for Super Admin store
+        const suppliersCheck = await getDocs(
+          query(collection(db, 'suppliers'), where('storeId', '==', STORE_ID), limit(1))
+        );
+        if (suppliersCheck.empty) {
+          const supBatch = writeBatch(db);
+          for (const sup of INITIAL_SUPPLIERS) {
+            supBatch.set(
+              doc(db, 'suppliers', sup.id),
+              serializeSupplierDoc(sup, currentUser.uid, true, STORE_ID)
+            );
+          }
+          await supBatch.commit();
+        }
+
         const existingCheck = await getDocs(
           query(collection(db, 'products'), where('storeId', '==', STORE_ID), limit(1))
         );
@@ -405,11 +662,12 @@ export default function App() {
     [currentUser]
   );
 
-  // 4. Real-time Firestore listeners (strictly guarded by authReady && currentUser, isolated by activeStoreId)
+  // 4. Real-time Firestore listeners (strictly guarded by authReady && currentUser && !isDemoMode, isolated by activeStoreId)
   useEffect(() => {
-    if (!authReady || !currentUser || !firebaseUser) return;
+    if (!authReady || !currentUser || !firebaseUser || isDemoMode) return;
 
     setProducts([]);
+    setSuppliers([]);
     setShifts([]);
     setSales([]);
     setCashMovements([]);
@@ -595,8 +853,19 @@ export default function App() {
       setStaffList([currentUser]);
     }
 
+    const unsubSuppliers = onSnapshot(
+      query(collection(db, 'suppliers'), storeFilter),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as Supplier);
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        setSuppliers(list);
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'suppliers')
+    );
+
     return () => {
       unsubProducts();
+      unsubSuppliers();
       unsubShifts();
       unsubSales();
       unsubCashMov();
@@ -604,11 +873,11 @@ export default function App() {
       unsubSettings();
       if (unsubStaff) unsubStaff();
     };
-  }, [authReady, currentUser, firebaseUser, activeStoreId]);
+  }, [authReady, currentUser, firebaseUser, activeStoreId, isDemoMode]);
 
   // 4b. Subscribe to isolated access keys only for manageable staff members
   useEffect(() => {
-    if (!authReady || !currentUser || !firebaseUser) {
+    if (!authReady || !currentUser || !firebaseUser || isDemoMode) {
       setStaffKeys({});
       return;
     }
@@ -716,6 +985,13 @@ export default function App() {
         badge: alertCounts.inventoryAlerts > 0 ? alertCounts.inventoryAlerts : undefined,
       });
     }
+    if (p.viewInventory || p.manageInventory || isDemoMode) {
+      items.push({
+        id: 'suppliers',
+        label: 'Proveedores',
+        icon: Truck,
+      });
+    }
     if (p.manageCash || p.operatePos) {
       items.push({ id: 'cash', label: 'Caja y Turnos', icon: Vault });
     }
@@ -735,8 +1011,16 @@ export default function App() {
     ) {
       items.push({ id: 'admin', label: 'Personal y Permisos', icon: Users });
     }
+    items.push({ id: 'pricing', label: 'Precio de la App', icon: CreditCard });
     return items;
-  }, [currentUser, alertCounts.inventoryAlerts]);
+  }, [currentUser, alertCounts.inventoryAlerts, isDemoMode]);
+
+  // Redirect directly to Cobro Rápido when signing in or entering Demo mode
+  useEffect(() => {
+    if (currentUser) {
+      setActiveTab('pos');
+    }
+  }, [currentUser?.uid, isDemoMode]);
 
   // Keep activeTab valid for current user's permissions
   useEffect(() => {
@@ -1069,6 +1353,10 @@ export default function App() {
     customer?: CustomerInfo;
     payment: PaymentBreakdown;
   }) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés registrar ventas.', 'warn');
+      return;
+    }
     if (!currentUser || !activeShift || cart.length === 0) return;
 
     let subtotal = 0;
@@ -1232,6 +1520,10 @@ export default function App() {
   };
 
   const handleVoidSale = async (saleId: string) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés anular comprobantes.', 'warn');
+      return;
+    }
     if (!currentUser) return;
     const target = sales.find((s) => s.id === saleId);
     if (!target || target.status === 'anulada') return;
@@ -1286,6 +1578,10 @@ export default function App() {
     cashier: string;
     openingFloat: number;
   }) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés abrir turnos.', 'warn');
+      return;
+    }
     if (!currentUser) return;
     const id = `turno-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
@@ -1314,6 +1610,10 @@ export default function App() {
     countedCash: number;
     notes: string;
   }) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés cerrar turnos.', 'warn');
+      return;
+    }
     if (!activeShift) return;
     const shiftSales = sales.filter(
       (s) => s.shiftId === activeShift.id && s.status === 'completada'
@@ -1354,6 +1654,10 @@ export default function App() {
     amount: number;
     reason: string;
   }) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés registrar movimientos de caja.', 'warn');
+      return;
+    }
     if (!activeShift || !currentUser) return;
     const id = `cm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
@@ -1379,6 +1683,10 @@ export default function App() {
   };
 
   const handleSaveProduct = async (product: Product, isNew: boolean) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés modificar el catálogo.', 'warn');
+      return;
+    }
     if (!currentUser) return;
     try {
       if (isNew) {
@@ -1399,12 +1707,103 @@ export default function App() {
   };
 
   const handleDeleteProduct = async (productId: string) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés eliminar productos.', 'warn');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'products', productId));
       setCart((prev) => prev.filter((c) => c.productId !== productId));
       showToast('Producto eliminado del catálogo', 'warn');
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `products/${productId}`);
+    }
+  };
+
+  const handleSaveSupplier = async (supplier: Supplier, isNew: boolean) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés modificar proveedores.', 'warn');
+      return;
+    }
+    if (!currentUser) return;
+    try {
+      if (isNew) {
+        await setDoc(
+          doc(db, 'suppliers', supplier.id),
+          serializeSupplierDoc(supplier, currentUser.uid, true, activeStoreId)
+        );
+      } else {
+        const updatePayload = serializeSupplierDoc(supplier, currentUser.uid, false, activeStoreId);
+        delete updatePayload.id;
+        delete updatePayload.storeId;
+        await updateDoc(doc(db, 'suppliers', supplier.id), updatePayload);
+      }
+      showToast(
+        isNew ? `Proveedor "${supplier.name}" registrado` : 'Proveedor actualizado',
+        'ok'
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `suppliers/${supplier.id}`);
+    }
+  };
+
+  const handleQuickCreateSupplier = async (name: string): Promise<Supplier | null> => {
+    if (isDemoMode || !currentUser) return null;
+    const cleanName = name.trim().slice(0, 120);
+    if (!cleanName) return null;
+    const newSup: Supplier = {
+      id: `sup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: cleanName,
+    };
+    try {
+      await setDoc(
+        doc(db, 'suppliers', newSup.id),
+        serializeSupplierDoc(newSup, currentUser.uid, true, activeStoreId)
+      );
+      showToast(`Proveedor "${cleanName}" agregado`, 'ok');
+      return newSup;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `suppliers/${newSup.id}`);
+      return null;
+    }
+  };
+
+  const handleDeleteSupplier = async (supplierId: string) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés eliminar proveedores.', 'warn');
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'suppliers', supplierId));
+      showToast('Proveedor eliminado del directorio', 'warn');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `suppliers/${supplierId}`);
+    }
+  };
+
+  const handleSavePricing = async (next: AppPricingConfig) => {
+    if (isDemoMode || !currentUser || currentUser.role !== 'super_admin') {
+      showToast('Solo el Administrador General puede modificar los precios.', 'warn');
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      id: 'pricing',
+      paymentPhone: (next.paymentPhone || '+595-975635770').trim().slice(0, 60),
+      currencySymbol: (next.currencySymbol || 'Gs.').trim().slice(0, 12) || 'Gs.',
+      monthlyPrice: Math.max(0, Number(next.monthlyPrice) || 0),
+      monthlyNote: (next.monthlyNote || '').trim().slice(0, 160),
+      semiannualPrice: Math.max(0, Number(next.semiannualPrice) || 0),
+      semiannualNote: (next.semiannualNote || '').trim().slice(0, 160),
+      annualPrice: Math.max(0, Number(next.annualPrice) || 0),
+      annualNote: (next.annualNote || '').trim().slice(0, 160),
+      updatedByUid: currentUser.uid,
+      updatedAt: serverTimestamp(),
+    };
+    try {
+      await setDoc(doc(db, 'appConfig', 'pricing'), payload);
+      showToast('Precios de la app actualizados correctamente', 'ok');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'appConfig/pricing');
     }
   };
 
@@ -1423,6 +1822,10 @@ export default function App() {
     newExpiryDate?: string;
     newBatchCode?: string;
   }) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés ajustar el stock.', 'warn');
+      return;
+    }
     if (!currentUser) return;
     const target = products.find((p) => p.id === productId);
     if (!target) return;
@@ -1476,6 +1879,10 @@ export default function App() {
   }, [customCategories, products]);
 
   const handleSaveCategories = async (nextCategories: string[]) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés editar categorías.', 'warn');
+      return;
+    }
     const seen = new Set<string>();
     const clean: string[] = [];
     for (const raw of nextCategories) {
@@ -1505,6 +1912,10 @@ export default function App() {
   };
 
   const handleUpdateHardwareConfig = async (next: HardwareConfig) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés modificar equipos.', 'warn');
+      return;
+    }
     setHardwareConfig(next);
     if (!currentUser) return;
     const hardwareDocId = getStoreSettingDocId(activeStoreId, 'hardware');
@@ -1522,6 +1933,10 @@ export default function App() {
   };
 
   const handleUpdateStore = async (next: StoreSettings) => {
+    if (isDemoMode) {
+      showToast('Modo Demo (solo lectura): no podés modificar datos del comercio.', 'warn');
+      return;
+    }
     const clean = sanitizeStoreSettings(next);
     setStore(clean);
     if (!currentUser) return;
@@ -1558,7 +1973,7 @@ export default function App() {
     assignedManagerUid?: string;
     permissions: StaffPermissions;
   }) => {
-    if (!currentUser) return;
+    if (isDemoMode || !currentUser) return;
     const cleanUsername = sanitizeStaffUsername(username);
     const email = normalizeStaffEmail(cleanUsername);
     const newUid = await createStaffAuthAccount(email, password);
@@ -1617,7 +2032,7 @@ export default function App() {
       newPassword?: string;
     }
   ) => {
-    if (!currentUser) return;
+    if (isDemoMode || !currentUser) return;
     const target = staffList.find((s) => s.uid === uid);
 
     if (updates.newPassword && updates.newPassword.trim().length > 0) {
@@ -1673,6 +2088,7 @@ export default function App() {
   };
 
   const handleDeleteStaff = async (staff: StaffProfile) => {
+    if (isDemoMode) return;
     const knownKey = staffKeys[staff.uid];
     try {
       await deleteDoc(doc(db, 'staff', staff.uid, 'credentials', 'access')).catch(() => {});
@@ -1694,8 +2110,12 @@ export default function App() {
     );
   }
 
-  if (!firebaseUser || !currentUser) {
-    return <LoginScreen externalError={authError} />;
+  if (!isDemoMode && (!firebaseUser || !currentUser)) {
+    return <LoginScreen externalError={authError} onEnterDemoMode={enterDemoMode} />;
+  }
+
+  if (!currentUser) {
+    return <LoginScreen externalError={authError} onEnterDemoMode={enterDemoMode} />;
   }
 
   const roleBadgeLabel =
@@ -1771,6 +2191,11 @@ export default function App() {
           )}
 
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            {isDemoMode && (
+              <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">
+                Modo Demo · Solo lectura
+              </span>
+            )}
             <div
               className={`hidden items-center gap-2 text-xs text-stone-500 ${
                 store.topBannerUrl ? '2xl:flex' : 'md:flex'
@@ -1805,12 +2230,20 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => signOut(auth)}
-              title="Cerrar sesión"
+              onClick={() => {
+                if (isDemoMode) {
+                  exitDemoMode();
+                } else {
+                  signOut(auth);
+                }
+              }}
+              title={isDemoMode ? 'Salir de Demo' : 'Cerrar sesión'}
               className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 rounded-lg border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition-colors hover:bg-amber-50 hover:text-emerald-950"
             >
               <LogOut className="h-4 w-4 text-orange-600" />
-              <span className="hidden sm:inline">Cerrar sesión</span>
+              <span className="hidden sm:inline">
+                {isDemoMode ? 'Salir de Demo' : 'Cerrar sesión'}
+              </span>
             </button>
           </div>
         </div>
@@ -1889,7 +2322,8 @@ export default function App() {
               store={store}
               scaleWeight={scaleWeight}
               scaleConnected={scaleConnected}
-              canApplyDiscounts={currentUser.permissions.applyDiscounts}
+              canApplyDiscounts={!isDemoMode && currentUser.permissions.applyDiscounts}
+              readOnly={isDemoMode}
               onSetScaleWeight={setScaleWeight}
               onAddProduct={addProductToCart}
               onUpdateQuantity={(productId, newQty) => {
@@ -1907,7 +2341,7 @@ export default function App() {
                 );
               }}
               onUpdateDiscount={(productId, discountPct) => {
-                if (!currentUser.permissions.applyDiscounts) return;
+                if (isDemoMode || !currentUser.permissions.applyDiscounts) return;
                 setCart((prev) =>
                   prev.map((i) => (i.productId === productId ? { ...i, discountPct } : i))
                 );
@@ -1933,7 +2367,7 @@ export default function App() {
                 shifts={[...(activeShift ? [activeShift] : []), ...closedShifts]}
                 activeShift={activeShift}
                 store={store}
-                canVoidSales={currentUser.permissions.voidSales}
+                canVoidSales={!isDemoMode && currentUser.permissions.voidSales}
                 onViewReceipt={(sale) => setReceiptSale(sale)}
                 onVoidSale={handleVoidSale}
                 onOpenCashTab={() => setActiveTab('cash')}
@@ -1945,28 +2379,43 @@ export default function App() {
               <InventoryManager
                 products={products}
                 categories={categories}
+                suppliers={suppliers}
                 stockMovements={stockMovements}
                 store={store}
-                canManageInventory={currentUser.permissions.manageInventory}
+                canManageInventory={!isDemoMode && currentUser.permissions.manageInventory}
                 onSaveProduct={handleSaveProduct}
                 onDeleteProduct={handleDeleteProduct}
                 onAdjustStock={handleAdjustStock}
                 onSaveCategories={handleSaveCategories}
+                onQuickCreateSupplier={isDemoMode ? undefined : handleQuickCreateSupplier}
+              />
+            )}
+
+          {activeTab === 'suppliers' &&
+            (currentUser.permissions.viewInventory ||
+              currentUser.permissions.manageInventory ||
+              isDemoMode) && (
+              <SuppliersManager
+                suppliers={suppliers}
+                products={products}
+                canManageSuppliers={!isDemoMode && currentUser.permissions.manageInventory}
+                onSaveSupplier={handleSaveSupplier}
+                onDeleteSupplier={handleDeleteSupplier}
               />
             )}
 
           {activeTab === 'cash' &&
             (currentUser.permissions.manageCash || currentUser.permissions.operatePos) && (
               <CashRegister
-                key={activeStoreId}
+                key={isDemoMode ? 'demo' : activeStoreId}
                 activeShift={activeShift}
                 closedShifts={closedShifts}
                 sales={sales}
                 cashMovements={cashMovements}
                 store={store}
                 defaultCashierName={currentUser.fullName}
-                canManageCash={currentUser.permissions.manageCash}
-                canVoidSales={currentUser.permissions.voidSales}
+                canManageCash={!isDemoMode && currentUser.permissions.manageCash}
+                canVoidSales={!isDemoMode && currentUser.permissions.voidSales}
                 onOpenShift={handleOpenShift}
                 onCloseShift={handleCloseShift}
                 onAddCashMovement={handleAddCashMovement}
@@ -1986,6 +2435,7 @@ export default function App() {
               scaleConnected={scaleConnected}
               scaleWeight={scaleWeight}
               scanLogs={scanLogs}
+              readOnly={isDemoMode}
               onUpdateConfig={handleUpdateHardwareConfig}
               onOpenStoreSettings={() => setActiveTab('store')}
               onConnectScanner={handleConnectScanner}
@@ -2009,7 +2459,11 @@ export default function App() {
             (currentUser.role === 'super_admin' ||
               currentUser.role === 'manager' ||
               currentUser.permissions.manageHardware) && (
-              <StoreProfileEditor store={store} onSaveStore={handleUpdateStore} />
+              <StoreProfileEditor
+                store={store}
+                readOnly={isDemoMode}
+                onSaveStore={handleUpdateStore}
+              />
             )}
 
           {activeTab === 'admin' &&
@@ -2019,11 +2473,23 @@ export default function App() {
                 currentUser={currentUser}
                 staffList={staffList}
                 staffKeys={staffKeys}
+                pricing={appPricing}
+                readOnly={isDemoMode}
+                onSavePricing={handleSavePricing}
                 onCreateStaff={handleCreateStaff}
                 onUpdateStaff={handleUpdateStaff}
                 onDeleteStaff={handleDeleteStaff}
               />
             )}
+
+          {activeTab === 'pricing' && (
+            <PricingPanel
+              pricing={appPricing}
+              canEditPricing={!isDemoMode && currentUser.role === 'super_admin'}
+              isDemoMode={isDemoMode}
+              onSavePricing={handleSavePricing}
+            />
+          )}
       </main>
 
       {/* Receipt Preview & Thermal Print Modal */}

@@ -39,6 +39,7 @@ interface PosTerminalProps {
   scaleWeight: number;
   scaleConnected: boolean;
   canApplyDiscounts?: boolean;
+  readOnly?: boolean;
   onSetScaleWeight: (kg: number) => void;
   onAddProduct: (product: Product, quantity: number) => void;
   onUpdateQuantity: (productId: string, newQty: number) => void;
@@ -63,6 +64,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   scaleWeight,
   scaleConnected,
   canApplyDiscounts = true,
+  readOnly = false,
   onSetScaleWeight,
   onAddProduct,
   onUpdateQuantity,
@@ -191,6 +193,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     store.currencySymbol.toUpperCase() === 'PYG';
 
   const openCheckoutModal = () => {
+    if (readOnly) return;
     if (!activeShift) {
       onRequestOpenShift();
       return;
@@ -260,7 +263,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   }, [paymentMethod, parsedCash, parsedCard, parsedTransfer, totals.total]);
 
   const handleConfirmPayment = async () => {
-    if (!checkoutValidation.valid || isSubmitting) return;
+    if (readOnly || !checkoutValidation.valid || isSubmitting) return;
     setCheckoutError(null);
     setIsSubmitting(true);
 
@@ -311,7 +314,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     <div className="grid h-full min-h-0 grid-cols-1 gap-5 lg:grid-cols-12">
       {/* Left Column: Scanner, Scale, Categories & Scrollable Product Catalog */}
       <div className="flex flex-col gap-4 lg:col-span-7 lg:h-full lg:min-h-0 xl:col-span-8">
-        {!activeShift && (
+        {readOnly && (
+          <div className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-950">
+            Modo Demo · Solo lectura: podés explorar los productos y simular un ticket, sin registrar ventas ni descontar stock.
+          </div>
+        )}
+        {!activeShift && !readOnly && (
           <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             <span>La caja se encuentra cerrada. Abrí un turno para registrar ventas.</span>
             <button
@@ -740,11 +748,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
           <button
             type="button"
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || readOnly}
             onClick={openCheckoutModal}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600"
           >
-            Cobrar {cart.length > 0 ? formatCurrency(totals.total, store.currencySymbol) : ''} (F9)
+            {readOnly
+              ? 'Modo Demo · Solo lectura (cobro deshabilitado)'
+              : `Cobrar ${cart.length > 0 ? formatCurrency(totals.total, store.currencySymbol) : ''} (F9)`}
           </button>
         </div>
       </div>

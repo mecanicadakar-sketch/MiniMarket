@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { Eye, EyeOff, KeyRound, Lock, ShieldCheck, User } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Lock, PlayCircle, ShieldCheck, User } from 'lucide-react';
 import {
   SUPER_ADMIN_EMAIL,
   auth,
@@ -10,9 +10,10 @@ import {
 
 interface LoginScreenProps {
   externalError?: string | null;
+  onEnterDemoMode: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnterDemoMode }) => {
   const [mode, setMode] = useState<'staff' | 'admin'>('admin');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,8 +53,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
     e.preventDefault();
     setErrorMsg(null);
     setShowProviderHelp(false);
-    if (!usernameOrEmail.trim() || !password) {
+    const trimmedUser = usernameOrEmail.trim().toLowerCase();
+    if (!trimmedUser || !password) {
       setErrorMsg('Ingresá tu usuario y contraseña.');
+      return;
+    }
+
+    if (
+      (trimmedUser === 'demo' || trimmedUser === 'demo@minimarket.local') &&
+      password === '123456'
+    ) {
+      onEnterDemoMode();
       return;
     }
 
@@ -243,6 +253,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError }) => {
               </p>
             </form>
           )}
+
+          {/* Demo Read-Only Access */}
+          <div className="mt-5 border-t border-amber-100 pt-4">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onEnterDemoMode}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-amber-100 disabled:opacity-60"
+            >
+              <PlayCircle className="h-4 w-4 text-orange-600" />
+              Ver App como Demo (Solo lectura)
+            </button>
+            <p className="mt-1.5 text-center font-mono text-[11px] text-stone-500">
+              Usuario: <strong className="text-emerald-950">demo</strong> · Clave:{' '}
+              <strong className="text-emerald-950">123456</strong> (solo visualización)
+            </p>
+          </div>
         </div>
       </div>
     </div>

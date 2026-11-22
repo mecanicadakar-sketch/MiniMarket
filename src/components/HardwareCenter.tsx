@@ -36,6 +36,7 @@ interface HardwareCenterProps {
   onTestScan: (code: string) => void;
   onTestPrint: () => void;
   onTestDrawer: () => Promise<void>;
+  readOnly?: boolean;
 }
 
 export const HardwareCenter: React.FC<HardwareCenterProps> = ({
@@ -59,6 +60,7 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
   onTestScan,
   onTestPrint,
   onTestDrawer,
+  readOnly = false,
 }) => {
   const [testBarcode, setTestBarcode] = useState('7790895000430');
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
@@ -89,6 +91,11 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
 
   return (
     <div className="space-y-6">
+      {readOnly && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-950">
+          Modo Demo (solo lectura): podés visualizar la configuración de equipos TPV, pero no modificar ni conectar periféricos.
+        </div>
+      )}
       {!serialSupported && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           Este navegador no expone la API Web Serial. Podés seguir usando el lector USB HID
@@ -97,7 +104,7 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <fieldset disabled={readOnly} className="grid grid-cols-1 gap-5 lg:grid-cols-2 disabled:opacity-85">
         {/* 1. Barcode Scanner */}
         <div className="rounded-xl border border-amber-200/80 bg-white p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -563,7 +570,7 @@ export const HardwareCenter: React.FC<HardwareCenterProps> = ({
             </select>
           </div>
         </div>
-      </div>
+      </fieldset>
 
       {/* Store Profile Shortcut */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-200/80 bg-white p-5">

@@ -16,6 +16,31 @@ export interface Product {
   minStock: number;
   expiryDate?: string; // YYYY-MM-DD
   batchCode?: string;
+  supplierId?: string;
+  supplierName?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  taxId?: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  category?: string;
+  notes?: string;
+}
+
+export interface AppPricingConfig {
+  paymentPhone: string;
+  currencySymbol: string;
+  monthlyPrice: number;
+  monthlyNote: string;
+  semiannualPrice: number;
+  semiannualNote: string;
+  annualPrice: number;
+  annualNote: string;
 }
 
 export interface CartItem {
@@ -179,4 +204,13 @@ export interface StaffProfile {
   updatedAt?: unknown;
 }
 
-export type ActiveTab = 'pos' | 'sales' | 'inventory' | 'cash' | 'hardware' | 'store' | 'admin';
+export type ActiveTab =
+  | 'pos'
+  | 'sales'
+  | 'inventory'
+  | 'suppliers'
+  | 'cash'
+  | 'hardware'
+  | 'store'
+  | 'admin'
+  | 'pricing';
