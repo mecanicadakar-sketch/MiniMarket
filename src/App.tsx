@@ -380,6 +380,14 @@ export default function App() {
 
   // 1. Initial Firestore connectivity test + public pricing subscription
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('demo') === '1') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+      enterDemoMode();
+    }
+  }, [enterDemoMode]);
+
+  useEffect(() => {
     testConnection();
     const unsubPricing = onSnapshot(
       doc(db, 'appConfig', 'pricing'),
@@ -389,7 +397,7 @@ export default function App() {
           return;
         }
         const raw = snap.data() as Partial<AppPricingConfig>;
-        setAppPricing({
+        const nextPricing: AppPricingConfig = {
           paymentPhone: raw.paymentPhone || INITIAL_PRICING_CONFIG.paymentPhone,
           currencySymbol: raw.currencySymbol || INITIAL_PRICING_CONFIG.currencySymbol,
           monthlyPrice:
@@ -416,7 +424,13 @@ export default function App() {
             typeof raw.annualNote === 'string'
               ? raw.annualNote
               : INITIAL_PRICING_CONFIG.annualNote,
-        });
+        };
+        setAppPricing(nextPricing);
+        try {
+          window.localStorage.setItem('minimarket_public_pricing', JSON.stringify(nextPricing));
+        } catch {
+          // Ignore storage restrictions
+        }
       },
       () => {
         // Fallback to defaults if unreachable before sign-in

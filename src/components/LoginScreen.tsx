@@ -6,8 +6,8 @@ import {
   EyeOff,
   KeyRound,
   Lock,
-  PlayCircle,
   ShieldCheck,
+  Sparkles,
   User,
 } from 'lucide-react';
 import {
@@ -278,17 +278,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
             </form>
           )}
 
-          {/* Demo Read-Only Access */}
+          {/* Promotional Page for Prospective Clients */}
           <div className="mt-5 border-t border-amber-100 pt-4">
-            <button
-              type="button"
-              disabled={loading}
-              onClick={onEnterDemoMode}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-amber-100 disabled:opacity-60"
+            <a
+              href="/assets/aistudio/minimarketpy-promocion_5f01eb64.html"
+              className="flex w-full flex-col items-center justify-center rounded-xl border border-amber-300 bg-amber-50/80 px-4 py-3 text-center transition-colors hover:bg-amber-100"
             >
-              <PlayCircle className="h-4 w-4 text-orange-600" />
-              Ver App como Demo (Solo lectura)
-            </button>
+              <span className="flex items-center gap-2 text-sm font-bold text-emerald-950">
+                <Sparkles className="h-4 w-4 text-orange-600" />
+                ¿Aún no tenés usuario y clave?
+              </span>
+              <span className="mt-0.5 text-xs font-semibold text-orange-700">
+                Conocé Mini Market PY y probá la Demo →
+              </span>
+            </a>
           </div>
         </div>
       </div>
