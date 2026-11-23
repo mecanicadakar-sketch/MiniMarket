@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { Eye, EyeOff, KeyRound, Lock, PlayCircle, ShieldCheck, User } from 'lucide-react';
+import {
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Lock,
+  PlayCircle,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import {
   SUPER_ADMIN_EMAIL,
   auth,
@@ -14,7 +23,7 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnterDemoMode }) => {
-  const [mode, setMode] = useState<'staff' | 'admin'>('admin');
+  const [mode, setMode] = useState<'staff' | 'admin'>('staff');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -110,32 +119,26 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
       />
       <div className="relative z-10 w-full max-w-md overflow-hidden rounded-xl border border-amber-200/80 bg-white shadow-2xl">
         <div className="h-1.5 w-full bg-gradient-to-r from-emerald-600 via-amber-400 to-orange-500" />
-        <div className="border-b border-amber-100 px-6 py-5">
-          <h1 className="font-display text-xl font-bold tracking-tight text-emerald-950">
-            Mini Market
-          </h1>
-          <p className="mt-1 text-xs text-stone-500">
-            Sistema Punto de Venta · Acceso por rol y permisos
-          </p>
+        <div className="flex items-center gap-3.5 border-b border-amber-100 px-6 py-4">
+          <img
+            src="/assets/aistudio/logoMiniMarket_f519c49e.jpg"
+            alt="Logo Mini Market"
+            className="h-14 w-auto shrink-0 object-contain"
+          />
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-extrabold tracking-tight leading-none">
+              <span className="text-emerald-700">Mini</span>{' '}
+              <span className="text-orange-600">Market</span>
+            </h1>
+            <p className="mt-1 text-xs text-stone-500">
+              Sistema Punto de Venta · Acceso por rol y permisos
+            </p>
+          </div>
         </div>
 
         <div className="p-6">
           {/* Segmented mode switch */}
           <div className="grid grid-cols-2 gap-1 rounded-lg border border-amber-200/70 bg-amber-50/70 p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('admin');
-                setErrorMsg(null);
-              }}
-              className={`rounded-md px-3 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
-                mode === 'admin'
-                  ? 'bg-white text-emerald-950 shadow-sm'
-                  : 'text-stone-600 hover:text-emerald-950'
-              }`}
-            >
-              Administrador General
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -149,6 +152,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
               }`}
             >
               Gerente / Personal
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('admin');
+                setErrorMsg(null);
+              }}
+              className={`rounded-md px-3 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
+                mode === 'admin'
+                  ? 'bg-white text-emerald-950 shadow-sm'
+                  : 'text-stone-600 hover:text-emerald-950'
+              }`}
+            >
+              Administrador General
             </button>
           </div>
 
@@ -165,6 +182,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
 
           {mode === 'admin' ? (
             <div className="mt-5 space-y-4">
+              <div className="flex items-start gap-2.5 rounded-xl border border-red-300 bg-red-50 px-3.5 py-3 text-xs text-red-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                <p className="font-bold">
+                  Advertencia: Solo ingreso de Administrador de la App.
+                </p>
+              </div>
+
               <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                 <div className="flex items-start gap-3">
                   <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
@@ -265,10 +289,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
               <PlayCircle className="h-4 w-4 text-orange-600" />
               Ver App como Demo (Solo lectura)
             </button>
-            <p className="mt-1.5 text-center font-mono text-[11px] text-stone-500">
-              Usuario: <strong className="text-emerald-950">demo</strong> · Clave:{' '}
-              <strong className="text-emerald-950">123456</strong> (solo visualización)
-            </p>
           </div>
         </div>
       </div>

@@ -78,6 +78,7 @@ export const PricingPanel: React.FC<PricingPanelProps> = ({
       periodLabel: 'por mes',
       price: pricing.monthlyPrice,
       highlight: 'Flexible sin permanencia',
+      promoFreeMonths: null as string | null,
       note: pricing.monthlyNote,
       featured: false,
       icon: Calendar,
@@ -87,7 +88,8 @@ export const PricingPanel: React.FC<PricingPanelProps> = ({
       title: 'Pago Semestral',
       periodLabel: 'por 6 meses',
       price: pricing.semiannualPrice,
-      highlight: '1 mes gratis',
+      highlight: 'Plan recomendado',
+      promoFreeMonths: '¡1 MES GRATIS!',
       note: pricing.semiannualNote,
       featured: true,
       icon: Sparkles,
@@ -97,7 +99,8 @@ export const PricingPanel: React.FC<PricingPanelProps> = ({
       title: 'Pago Anual',
       periodLabel: 'por 12 meses',
       price: pricing.annualPrice,
-      highlight: '2 meses gratis',
+      highlight: 'Máximo ahorro',
+      promoFreeMonths: '¡2 MESES GRATIS!',
       note: pricing.annualNote,
       featured: false,
       icon: BadgeCheck,
@@ -372,7 +375,37 @@ export const PricingPanel: React.FC<PricingPanelProps> = ({
                   <span className="text-xs font-medium text-stone-500">{plan.periodLabel}</span>
                 </div>
 
-                <p className="mt-3 text-xs leading-relaxed text-stone-600">
+                {plan.promoFreeMonths && (
+                  <div
+                    className={`mt-4 rounded-xl border-2 px-4 py-3.5 text-center shadow-md ring-2 ${
+                      plan.id === 'annual'
+                        ? 'border-amber-400 bg-gradient-to-r from-emerald-900 via-emerald-800 to-emerald-700 text-amber-300 ring-amber-300/60'
+                        : 'border-amber-300 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white ring-orange-300/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <Sparkles className="h-6 w-6 shrink-0 text-amber-200" />
+                      <span className="font-display text-2xl font-black tracking-tight uppercase sm:text-[26px]">
+                        {plan.promoFreeMonths}
+                      </span>
+                    </div>
+                    <p
+                      className={`mt-1 text-xs font-bold uppercase tracking-wider ${
+                        plan.id === 'annual' ? 'text-emerald-100' : 'text-amber-100'
+                      }`}
+                    >
+                      {plan.id === 'annual' ? 'Pagás 10 meses · Usás 12' : 'Pagás 5 meses · Usás 6'}
+                    </p>
+                  </div>
+                )}
+
+                <p
+                  className={`mt-3 leading-relaxed ${
+                    plan.promoFreeMonths
+                      ? 'text-sm font-semibold text-emerald-950'
+                      : 'text-xs text-stone-600'
+                  }`}
+                >
                   {plan.note || 'Incluye todas las funciones de punto de venta, inventario, caja y soporte.'}
                 </p>
               </div>

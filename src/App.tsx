@@ -2128,7 +2128,19 @@ export default function App() {
           ? 'Depositero / Stock'
           : 'Personal de Caja');
 
-  const isDefaultStoreName = store.storeName.trim().toLowerCase() === 'mini market';
+  const hasCustomBranchName =
+    Boolean(store.storeName?.trim()) &&
+    store.storeName.trim().toLowerCase() !== 'mini market';
+  const primaryBusinessLine = [
+    hasCustomBranchName && store.storeName.trim() !== store.legalName?.trim()
+      ? store.legalName?.trim()
+        ? `${store.storeName.trim()} · ${store.legalName.trim()}`
+        : store.storeName.trim()
+      : store.legalName?.trim() || store.storeName.trim(),
+    store.taxId?.trim() ? `RUC: ${store.taxId.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="relative flex min-h-screen flex-col bg-amber-50/35 text-stone-900 lg:h-screen lg:overflow-hidden">
@@ -2150,30 +2162,29 @@ export default function App() {
       {/* Top Horizontal Banner (White Background) */}
       <header className="relative z-20 shrink-0 border-b border-amber-200 bg-white text-stone-900 shadow-xs">
         <div className="flex min-h-[58px] items-center justify-between gap-3 px-4 py-2 lg:px-6">
-          <div className="flex items-center gap-3.5 min-w-0 shrink-0">
-            {store.logoUrl ? (
-              <img
-                src={store.logoUrl}
-                alt={store.storeName}
-                referrerPolicy="no-referrer"
-                className="h-20 w-auto max-w-[210px] shrink-0 object-contain sm:h-24 sm:max-w-[250px] xl:h-28 xl:max-w-[280px]"
-              />
-            ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-emerald-50 text-orange-600 sm:h-16 sm:w-16">
-                <Store className="h-8 w-8" />
-              </div>
-            )}
+          <div className="flex items-center gap-3.5 min-w-0">
+            <img
+              src={store.logoUrl || '/assets/aistudio/logoMiniMarket_f519c49e.jpg'}
+              alt={store.storeName}
+              referrerPolicy="no-referrer"
+              className="h-16 w-auto max-w-[180px] shrink-0 object-contain sm:h-20 sm:max-w-[220px] xl:h-24 xl:max-w-[260px]"
+            />
             <div className="min-w-0">
               <h1 className="truncate font-display text-3xl font-extrabold leading-none tracking-tight sm:text-4xl xl:text-5xl">
-                {isDefaultStoreName ? (
-                  <>
-                    <span className="text-emerald-700">Mini</span>{' '}
-                    <span className="text-orange-600">Market</span>
-                  </>
-                ) : (
-                  <span className="text-emerald-950">{store.storeName}</span>
-                )}
+                <span className="text-emerald-700">Mini</span>{' '}
+                <span className="text-orange-600">Market</span>
               </h1>
+              <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight text-stone-600 sm:text-xs">
+                {primaryBusinessLine && (
+                  <p className="truncate font-medium text-emerald-950">{primaryBusinessLine}</p>
+                )}
+                {store.address?.trim() && (
+                  <p className="truncate text-stone-600">{store.address.trim()}</p>
+                )}
+                {store.phone?.trim() && (
+                  <p className="truncate font-mono text-stone-600">{store.phone.trim()}</p>
+                )}
+              </div>
             </div>
           </div>
 
