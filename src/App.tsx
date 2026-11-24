@@ -271,7 +271,7 @@ function serializeSupplierDoc(
 
 function sanitizeStoreSettings(s: StoreSettings): StoreSettings {
   const payload: StoreSettings = {
-    storeName: (s.storeName || 'Mini Market').trim().slice(0, 120) || 'Mini Market',
+    storeName: (s.storeName || 'Soft Market').trim().slice(0, 120) || 'Soft Market',
     legalName: (s.legalName || '').trim().slice(0, 160),
     taxId: (s.taxId || '').trim().slice(0, 40),
     address: (s.address || '').trim().slice(0, 200),
@@ -516,7 +516,7 @@ export default function App() {
             await signOut(auth);
             setCurrentUser(null);
             setAuthError(
-              'Esta cuenta no tiene un perfil habilitado en Mini Market. Solicitá acceso al Administrador o Gerente.'
+              'Esta cuenta no tiene un perfil habilitado en Soft Market. Solicitá acceso al Administrador o Gerente.'
             );
             setAuthReady(true);
             return;
@@ -2148,7 +2148,9 @@ export default function App() {
   const hasCustomBranchName =
     Boolean(store.storeName?.trim()) &&
     normalizedStoreName !== 'mini market' &&
-    normalizedStoreName !== 'mini market py';
+    normalizedStoreName !== 'mini market py' &&
+    normalizedStoreName !== 'soft market' &&
+    normalizedStoreName !== 'soft market py';
   const commercialNameLine = hasCustomBranchName ? store.storeName.trim() : '';
   const legalBusinessLine = [
     store.legalName?.trim() || (!commercialNameLine ? store.storeName.trim() : ''),
@@ -2164,7 +2166,7 @@ export default function App() {
           store.bannerUrl ||
           '/src/assets/images/minimarket_store_backdrop_1795272439135.jpg'
         }
-        alt="Fondo de Mini Market"
+        alt="Fondo de Soft Market"
         referrerPolicy="no-referrer"
         className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-20"
         aria-hidden="true"
@@ -2179,15 +2181,15 @@ export default function App() {
         <div className="flex min-h-[58px] items-center justify-between gap-3 px-4 py-2 lg:px-6">
           <div className="flex items-center gap-3.5 min-w-0">
             <img
-              src={store.logoUrl || '/assets/aistudio/logoMiniMarket_f519c49e.jpg'}
+              src={store.logoUrl || '/assets/aistudio/Logo_Soft_Market_44919632.png'}
               alt={store.storeName}
               referrerPolicy="no-referrer"
               className="h-16 w-auto max-w-[180px] shrink-0 object-contain sm:h-20 sm:max-w-[220px] xl:h-24 xl:max-w-[260px]"
             />
             <div className="min-w-0">
               <h1 className="truncate font-display text-3xl font-extrabold leading-none tracking-tight sm:text-4xl xl:text-5xl">
-                <span className="text-emerald-700">Mini</span>{' '}
-                <span className="text-orange-600">Market Py</span>
+                <span className="text-emerald-700">Soft</span>{' '}
+                <span className="text-orange-600">Market</span>
               </h1>
               <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight text-stone-600 sm:text-xs">
                 {commercialNameLine && (

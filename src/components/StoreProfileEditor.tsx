@@ -115,7 +115,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({
               draft.bannerUrl ||
               '/src/assets/images/minimarket_store_backdrop_1795272439135.jpg'
             }
-            alt={`Portada de ${draft.storeName || 'Mini Market'}`}
+            alt={`Portada de ${draft.storeName || 'Soft Market'}`}
             referrerPolicy="no-referrer"
             className="h-full w-full object-cover opacity-90"
           />

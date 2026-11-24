@@ -87,8 +87,8 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
 ];
 
 export const INITIAL_STORE_SETTINGS: StoreSettings = {
-  storeName: 'Mini Market',
-  legalName: 'Autoservicio Mini Market S.R.L.',
+  storeName: 'Soft Market',
+  legalName: 'Autoservicio Soft Market S.R.L.',
   taxId: '80045892-4',
   address: 'Av. San Martín 1420, Local 2',
   phone: '(021) 482-391',

@@ -109,7 +109,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-emerald-950 p-4">
       <img
         src="/src/assets/images/minimarket_store_backdrop_1795272439135.jpg"
-        alt="Interior de Mini Market"
+        alt="Interior de Soft Market"
         referrerPolicy="no-referrer"
         className="pointer-events-none absolute inset-0 h-full w-full object-cover"
       />
@@ -121,14 +121,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
         <div className="h-1.5 w-full bg-gradient-to-r from-emerald-600 via-amber-400 to-orange-500" />
         <div className="flex items-center gap-3.5 border-b border-amber-100 px-6 py-4">
           <img
-            src="/assets/aistudio/logoMiniMarket_f519c49e.jpg"
-            alt="Logo Mini Market"
-            className="h-14 w-auto shrink-0 object-contain"
+            src="/assets/aistudio/Logo_Soft_Market_44919632.png"
+            alt="Logo Soft Market"
+            className="h-14 w-auto max-w-[135px] shrink-0 object-contain"
           />
           <div className="min-w-0">
             <h1 className="font-display text-2xl font-extrabold tracking-tight leading-none">
-              <span className="text-emerald-700">Mini</span>{' '}
-              <span className="text-orange-600">Market Py</span>
+              <span className="text-emerald-700">Soft</span>{' '}
+              <span className="text-orange-600">Market</span>
             </h1>
             <p className="mt-1 text-xs text-stone-500">
               Sistema Punto de Venta · Acceso por rol y permisos
@@ -289,7 +289,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
                 ¿Aún no tenés usuario y clave?
               </span>
               <span className="mt-0.5 text-xs font-semibold text-orange-700">
-                Conocé Mini Market PY y probá la Demo →
+                Conocé Soft Market y probá la Demo →
               </span>
             </a>
           </div>
