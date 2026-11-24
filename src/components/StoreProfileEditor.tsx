@@ -416,7 +416,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({
           Información general, fiscal y de comprobantes
         </h3>
         <div className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2 lg:grid-cols-3">
-          <div>
+          <div className="sm:col-span-2 lg:col-span-3">
             <label className="block font-medium text-stone-700">Nombre comercial *</label>
             <input
               type="text"
@@ -427,7 +427,7 @@ export const StoreProfileEditor: React.FC<StoreProfileEditorProps> = ({
               className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-orange-500 focus:outline-none"
             />
           </div>
-          <div>
+          <div className="sm:col-span-2 lg:col-span-3">
             <label className="block font-medium text-stone-700">Razón social</label>
             <input
               type="text"

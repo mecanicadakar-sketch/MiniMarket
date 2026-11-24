@@ -2142,15 +2142,14 @@ export default function App() {
           ? 'Depositero / Stock'
           : 'Personal de Caja');
 
+  const normalizedStoreName = store.storeName?.trim().toLowerCase() || '';
   const hasCustomBranchName =
     Boolean(store.storeName?.trim()) &&
-    store.storeName.trim().toLowerCase() !== 'mini market';
-  const primaryBusinessLine = [
-    hasCustomBranchName && store.storeName.trim() !== store.legalName?.trim()
-      ? store.legalName?.trim()
-        ? `${store.storeName.trim()} · ${store.legalName.trim()}`
-        : store.storeName.trim()
-      : store.legalName?.trim() || store.storeName.trim(),
+    normalizedStoreName !== 'mini market' &&
+    normalizedStoreName !== 'mini market py';
+  const commercialNameLine = hasCustomBranchName ? store.storeName.trim() : '';
+  const legalBusinessLine = [
+    store.legalName?.trim() || (!commercialNameLine ? store.storeName.trim() : ''),
     store.taxId?.trim() ? `RUC: ${store.taxId.trim()}` : '',
   ]
     .filter(Boolean)
@@ -2189,8 +2188,11 @@ export default function App() {
                 <span className="text-orange-600">Market Py</span>
               </h1>
               <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight text-stone-600 sm:text-xs">
-                {primaryBusinessLine && (
-                  <p className="truncate font-medium text-emerald-950">{primaryBusinessLine}</p>
+                {commercialNameLine && (
+                  <p className="truncate font-semibold text-emerald-950">{commercialNameLine}</p>
+                )}
+                {legalBusinessLine && (
+                  <p className="truncate font-medium text-emerald-950">{legalBusinessLine}</p>
                 )}
                 {store.address?.trim() && (
                   <p className="truncate text-stone-600">{store.address.trim()}</p>
