@@ -1025,7 +1025,9 @@ export default function App() {
     ) {
       items.push({ id: 'admin', label: 'Personal y Permisos', icon: Users });
     }
-    items.push({ id: 'pricing', label: 'Precio de la App', icon: CreditCard });
+    if (isDemoMode) {
+      items.push({ id: 'pricing', label: 'Precio de la App', icon: CreditCard });
+    }
     return items;
   }, [currentUser, alertCounts.inventoryAlerts, isDemoMode]);
 
@@ -2509,7 +2511,7 @@ export default function App() {
               />
             )}
 
-          {activeTab === 'pricing' && (
+          {activeTab === 'pricing' && isDemoMode && (
             <PricingPanel
               pricing={appPricing}
               canEditPricing={!isDemoMode && currentUser.role === 'super_admin'}
