@@ -980,7 +980,7 @@ export default function App() {
     }[] = [];
 
     if (p.operatePos) {
-      items.push({ id: 'pos', label: 'Cobro Rápido', icon: ShoppingCart });
+      items.push({ id: 'pos', label: 'Caja', icon: ShoppingCart });
     }
     if (
       p.operatePos ||
