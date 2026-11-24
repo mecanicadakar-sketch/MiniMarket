@@ -2186,7 +2186,7 @@ export default function App() {
             <div className="min-w-0">
               <h1 className="truncate font-display text-3xl font-extrabold leading-none tracking-tight sm:text-4xl xl:text-5xl">
                 <span className="text-emerald-700">Mini</span>{' '}
-                <span className="text-orange-600">Market</span>
+                <span className="text-orange-600">Market Py</span>
               </h1>
               <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight text-stone-600 sm:text-xs">
                 {primaryBusinessLine && (

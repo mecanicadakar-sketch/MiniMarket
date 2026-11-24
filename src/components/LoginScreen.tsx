@@ -128,7 +128,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
           <div className="min-w-0">
             <h1 className="font-display text-2xl font-extrabold tracking-tight leading-none">
               <span className="text-emerald-700">Mini</span>{' '}
-              <span className="text-orange-600">Market</span>
+              <span className="text-orange-600">Market Py</span>
             </h1>
             <p className="mt-1 text-xs text-stone-500">
               Sistema Punto de Venta · Acceso por rol y permisos
@@ -211,7 +211,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ externalError, onEnter
                 className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
               >
                 <KeyRound className="h-5 w-5 text-amber-300" />
-                {loading ? 'Verificando cuenta...' : 'Ingresar con Google'}
+                {loading ? 'Verificando cuenta...' : 'Ingreso Exclusivo Administrador'}
               </button>
             </div>
           ) : (
